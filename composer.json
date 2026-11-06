@@ -1,0 +1,38 @@
+{
+    "name": "jdecool/pcomposer",
+    "description": "pnpm-style content-addressable store for Composer: extract once, hardlink/reflink into vendor/",
+    "type": "composer-plugin",
+    "license": "MIT",
+    "require": {
+        "php": "^8.1",
+        "composer-plugin-api": "^2.0"
+    },
+    "require-dev": {
+        "composer/composer": "^2.11",
+        "friendsofphp/php-cs-fixer": "^3.0",
+        "phpstan/phpstan": "^2.0",
+        "phpunit/phpunit": "^10.5 || ^11.5"
+    },
+    "autoload": {
+        "psr-4": {
+            "JDecool\\Composer\\Plugin\\PComposer\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "JDecool\\Composer\\Plugin\\PComposer\\Tests\\": "tests/"
+        }
+    },
+    "extra": {
+        "class": "JDecool\\Composer\\Plugin\\PComposer\\Plugin",
+        "plugin-modifies-downloads": true
+    },
+    "scripts": {
+        "test": "phpunit",
+        "lint": "php-cs-fixer check --diff",
+        "stan": "phpstan analyse"
+    },
+    "config": {
+        "sort-packages": true
+    }
+}
