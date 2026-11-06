@@ -44,10 +44,8 @@ class StoreZipDownloader extends ZipDownloader
 
     public function install(PackageInterface $package, string $path, bool $output = true): PromiseInterface
     {
-        $vendorDir = $this->config->get('vendor-dir');
-        \assert(\is_string($vendorDir));
-        // Target containing the vendor dir (create-project in ".") is the parent's merge case: not ours.
-        if (str_contains($this->filesystem->normalizePath($vendorDir), $this->filesystem->normalizePath($path.\DIRECTORY_SEPARATOR))) {
+        // A non-empty target (shared-path installers, create-project in ".") is the parent's merge case: not ours.
+        if (is_dir($path) && !$this->filesystem->isDirEmpty($path)) {
             return parent::install($package, $path, $output);
         }
 

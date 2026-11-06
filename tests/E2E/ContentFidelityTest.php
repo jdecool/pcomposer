@@ -45,4 +45,20 @@ final class ContentFidelityTest extends E2ETestCase
         self::assertSame('<?php class Foo {}', file_get_contents($pkg.'/lib/Alias.php'));
         self::assertContains(fileinode($pkg.'/src/Foo.php'), $this->storeInodes());
     }
+
+    public function testNonEmptyTargetFallsThroughToComposer(): void
+    {
+        $this->addPackage('acme/lib', '1.0.0', ['src/Foo.php' => '<?php class Foo {}']);
+        $project = $this->createProject(['acme/lib' => '1.0.0']);
+        mkdir($project.'/vendor/acme/lib', 0777, true);
+        file_put_contents($project.'/vendor/acme/lib/stale.txt', 'left over');
+
+        [$exitCode, $output] = $this->composer($project, ['install']);
+
+        self::assertSame(0, $exitCode, $output);
+        self::assertStringContainsString('Extracting archive', $output);
+        self::assertFileExists($project.'/vendor/acme/lib/src/Foo.php');
+        self::assertDirectoryDoesNotExist($this->tmp.'/store', 'nothing should have been ingested');
+        self::assertSame('{}', trim((string) file_get_contents($project.'/vendor/composer/pcomposer.json')));
+    }
 }
