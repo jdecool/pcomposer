@@ -28,9 +28,7 @@ final class CopyFallbackTest extends E2ETestCase
         self::assertSame(0, $exitCode, $output);
         self::assertSame(1, substr_count($output, 'falling back to copy for this run'), $output);
         self::assertStringContainsString('pcomposer: hardlink failed (', $output);
-        /** @var array<string, array{strategy: string}> $manifest */
-        $manifest = json_decode((string) file_get_contents($project.'/vendor/composer/pcomposer.json'), true, 512, \JSON_THROW_ON_ERROR);
-        self::assertSame(['copy', 'copy'], array_column($manifest, 'strategy'));
+        self::assertSame(['copy', 'copy'], array_column($this->manifest($project), 'strategy'));
         self::assertSame(0644, fileperms($project.'/vendor/acme/lib/src/Foo.php') & 0777);
     }
 

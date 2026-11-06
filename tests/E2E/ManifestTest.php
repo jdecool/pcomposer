@@ -113,15 +113,6 @@ final class ManifestTest extends E2ETestCase
         return $files;
     }
 
-    /** @return array<string, array{name: string, version: string, reference: string, strategy: string}> */
-    private function manifest(string $project): array
-    {
-        /** @var array<string, array{name: string, version: string, reference: string, strategy: string}> $entries */
-        $entries = json_decode((string) file_get_contents($project.'/vendor/composer/pcomposer.json'), true, 512, \JSON_THROW_ON_ERROR);
-
-        return $entries;
-    }
-
     /** Artifact packages have no dist reference: Composer uses the zip's sha1 instead. */
     private function zipSha1(string $name, string $version): string
     {

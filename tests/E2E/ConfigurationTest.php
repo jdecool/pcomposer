@@ -123,13 +123,4 @@ final class ConfigurationTest extends E2ETestCase
         }
         self::assertTrue($found, 'installed file is not hard-linked into the relocated store');
     }
-
-    /** @return array<string, array{name: string, version: string, reference: string, strategy: string}> */
-    private function manifest(string $project): array
-    {
-        /** @var array<string, array{name: string, version: string, reference: string, strategy: string}> $manifest */
-        $manifest = json_decode((string) file_get_contents($project.'/vendor/composer/pcomposer.json'), true, 512, \JSON_THROW_ON_ERROR);
-
-        return $manifest;
-    }
 }

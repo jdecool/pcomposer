@@ -193,6 +193,8 @@ abstract class E2ETestCase extends TestCase
             'COMPOSER_HOME' => $this->tmp.'/home',
             'COMPOSER_CACHE_DIR' => $this->tmp.'/cache',
             'PCOMPOSER_STORE' => $this->tmp.'/store',
+            'PCOMPOSER_STRATEGY' => '',
+            'PCOMPOSER_DISABLE' => '',
             'COMPOSER_ALLOW_SUPERUSER' => '1',
             'COMPOSER_NO_INTERACTION' => '1',
         ];
@@ -208,6 +210,15 @@ abstract class E2ETestCase extends TestCase
         self::assertIsResource($process);
 
         return [proc_close($process), (string) file_get_contents($log)];
+    }
+
+    /** @return array<string, array{name: string, version: string, reference: string, strategy: string}> the project's vendor/composer/pcomposer.json */
+    protected function manifest(string $project): array
+    {
+        /** @var array<string, array{name: string, version: string, reference: string, strategy: string}> $entries */
+        $entries = json_decode((string) file_get_contents($project.'/vendor/composer/pcomposer.json'), true, 512, \JSON_THROW_ON_ERROR);
+
+        return $entries;
     }
 
     /** @return list<int> inodes of every regular file under the store */

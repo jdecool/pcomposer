@@ -59,13 +59,4 @@ final class ReflinkInstallTest extends E2ETestCase
         self::assertSame(['copy', 'copy'], array_column($this->manifest($project), 'strategy'));
         self::assertSame(0644, fileperms($project.'/vendor/acme/lib/src/Foo.php') & 0777);
     }
-
-    /** @return array<string, array{strategy: string}> */
-    private function manifest(string $project): array
-    {
-        /** @var array<string, array{strategy: string}> $manifest */
-        $manifest = json_decode((string) file_get_contents($project.'/vendor/composer/pcomposer.json'), true, 512, \JSON_THROW_ON_ERROR);
-
-        return $manifest;
-    }
 }

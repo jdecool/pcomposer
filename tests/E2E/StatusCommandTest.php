@@ -33,8 +33,9 @@ final class StatusCommandTest extends E2ETestCase
         self::assertMatchesRegularExpression('/acme\/lib\s+\|\s+1\.2\.0\s+\|\s+hardlink/', $output);
         self::assertMatchesRegularExpression('/acme\/zed\s+\|\s+2\.0\.0\s+\|\s+hardlink/', $output);
         self::assertStringContainsString($this->tmp.'/store', $output);
-        self::assertStringContainsString($this->storeSize().' bytes', $output);
-        self::assertGreaterThan(0, $this->storeSize());
+        // Two package composer.json of equal length, plus the two sources: everything the store holds.
+        $size = 2 * \strlen("{\n    \"name\": \"acme/lib\",\n    \"version\": \"1.2.0\"\n}") + \strlen('<?php class Foo {}') + \strlen('<?php class Zed {}');
+        self::assertStringContainsString("($size bytes)", $output);
     }
 
     public function testStatusWithoutManifestSaysSoAndExitsZero(): void
@@ -48,18 +49,5 @@ final class StatusCommandTest extends E2ETestCase
 
         self::assertSame(0, $exitCode, $output);
         self::assertStringContainsString('No package linked from the store', $output);
-    }
-
-    /** Sum of the sizes of the files under the store's `files/` dir. */
-    private function storeSize(): int
-    {
-        $size = 0;
-        $it = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($this->tmp.'/store/files', \FilesystemIterator::SKIP_DOTS));
-        foreach ($it as $file) {
-            /** @var \SplFileInfo $file */
-            $size += $file->getSize();
-        }
-
-        return $size;
     }
 }

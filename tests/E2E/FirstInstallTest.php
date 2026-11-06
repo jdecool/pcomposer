@@ -26,7 +26,7 @@ final class FirstInstallTest extends E2ETestCase
         self::assertStringContainsString('Loading plugin JDecool\Composer\Plugin\PComposer\Plugin (from jdecool/pcomposer)', $output);
         self::assertContains(fileinode($project.'/vendor/acme/lib/src/Foo.php'), $this->storeInodes());
         self::assertFileExists($project.'/vendor/jdecool/pcomposer/src/Plugin.php');
-        self::assertSame(['acme/lib'], $this->manifestPackages($project), 'the plugin itself is installed by Composer before activation');
+        self::assertSame(['acme/lib'], array_keys($this->manifest($project)), 'the plugin itself is installed by Composer before activation');
     }
 
     public function testProjectThatDoesNotMentionTheGloballyInstalledPluginGetsLinkedPackages(): void
@@ -42,15 +42,6 @@ final class FirstInstallTest extends E2ETestCase
         self::assertStringContainsString('Loading plugin JDecool\Composer\Plugin\PComposer\Plugin (from jdecool/pcomposer, installed globally)', $output);
         self::assertContains(fileinode($project.'/vendor/acme/lib/src/Foo.php'), $this->storeInodes());
         self::assertFileDoesNotExist($project.'/vendor/jdecool');
-        self::assertSame(['acme/lib'], $this->manifestPackages($project));
-    }
-
-    /** @return list<string> package names listed in vendor/composer/pcomposer.json */
-    private function manifestPackages(string $project): array
-    {
-        /** @var array<string, mixed> $manifest */
-        $manifest = json_decode((string) file_get_contents($project.'/vendor/composer/pcomposer.json'), true, 512, \JSON_THROW_ON_ERROR);
-
-        return array_keys($manifest);
+        self::assertSame(['acme/lib'], array_keys($this->manifest($project)));
     }
 }
