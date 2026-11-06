@@ -6,13 +6,26 @@ namespace JDecool\Composer\Plugin\PComposer;
 
 use Composer\Cache;
 use Composer\Composer;
+use Composer\EventDispatcher\EventSubscriberInterface;
 use Composer\IO\IOInterface;
 use Composer\Plugin\PluginInterface;
+use Composer\Script\Event;
+use Composer\Script\ScriptEvents;
 use Composer\Util\Filesystem;
 use Composer\Util\Platform;
 
-class Plugin implements PluginInterface
+class Plugin implements PluginInterface, EventSubscriberInterface
 {
+    private ?Manifest $manifest = null;
+
+    public static function getSubscribedEvents(): array
+    {
+        return [
+            ScriptEvents::POST_INSTALL_CMD => 'writeManifest',
+            ScriptEvents::POST_UPDATE_CMD => 'writeManifest',
+        ];
+    }
+
     public function activate(Composer $composer, IOInterface $io): void
     {
         if (Platform::isWindows()) {
@@ -23,6 +36,9 @@ class Plugin implements PluginInterface
         $cacheDir = $config->get('cache-dir');
         \assert(\is_string($cacheDir));
         $store = new Store(Platform::getEnv('PCOMPOSER_STORE') ?: $cacheDir.'/pcomposer-store');
+        $vendorDir = $config->get('vendor-dir');
+        \assert(\is_string($vendorDir));
+        $this->manifest = Manifest::inVendorDir($vendorDir);
 
         // Same wiring as Composer\Factory::createDownloadManager for the stock zip downloader.
         $cache = null;
@@ -36,6 +52,8 @@ class Plugin implements PluginInterface
 
         $composer->getDownloadManager()->setDownloader('zip', new StoreZipDownloader(
             $store,
+            $this->manifest,
+            $composer->getInstallationManager(),
             $io,
             $config,
             $composer->getLoop()->getHttpDownloader(),
@@ -44,6 +62,12 @@ class Plugin implements PluginInterface
             new Filesystem($process),
             $process,
         ));
+    }
+
+    /** Runs after every install/update batch (`composer remove` fires post-update-cmd too). */
+    public function writeManifest(Event $event): void
+    {
+        $this->manifest?->write($event->getComposer()->getRepositoryManager()->getLocalRepository());
     }
 
     public function deactivate(Composer $composer, IOInterface $io): void

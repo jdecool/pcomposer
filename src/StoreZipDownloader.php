@@ -9,6 +9,7 @@ use Composer\Config;
 use Composer\DependencyResolver\Operation\InstallOperation;
 use Composer\Downloader\ZipDownloader;
 use Composer\EventDispatcher\EventDispatcher;
+use Composer\Installer\InstallationManager;
 use Composer\IO\IOInterface;
 use Composer\Package\PackageInterface;
 use Composer\Util\Filesystem;
@@ -26,6 +27,8 @@ class StoreZipDownloader extends ZipDownloader
 {
     public function __construct(
         private readonly Store $store,
+        private readonly Manifest $manifest,
+        private readonly InstallationManager $installationManager,
         IOInterface $io,
         Config $config,
         HttpDownloader $httpDownloader,
@@ -82,6 +85,10 @@ class StoreZipDownloader extends ZipDownloader
                 $key = self::storeKey($package);
                 $this->store->ingest($key, self::packageRoot($temporaryDir));
                 $this->store->link($key, $path);
+                // `composer status` installs into `<path>_compare` to diff: only the real install path counts.
+                if ($this->filesystem->normalizePath($path) === $this->filesystem->normalizePath((string) $this->installationManager->getInstallPath($package))) {
+                    $this->manifest->record($package, 'hardlink');
+                }
                 $this->filesystem->removeDirectory($temporaryDir);
                 $this->removeCleanupPath($package, $temporaryDir);
                 $this->removeCleanupPath($package, $path);
