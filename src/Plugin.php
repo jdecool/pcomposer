@@ -35,7 +35,7 @@ class Plugin implements PluginInterface, EventSubscriberInterface, Capable
 
     public function activate(Composer $composer, IOInterface $io): void
     {
-        if (Platform::isWindows()) {
+        if (Platform::isWindows() || !Config::fromComposer($composer)->enabled) {
             return;
         }
 
