@@ -6,7 +6,7 @@ namespace JDecool\Composer\Plugin\PComposer\Command;
 
 use Composer\Command\BaseCommand;
 use JDecool\Composer\Plugin\PComposer\Manifest;
-use JDecool\Composer\Plugin\PComposer\Store;
+use JDecool\Composer\Plugin\PComposer\Plugin;
 use Symfony\Component\Console\Helper\Table;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
@@ -20,10 +20,10 @@ final class StatusCommand extends BaseCommand
 
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
-        $config = $this->requireComposer()->getConfig();
-        $vendorDir = $config->get('vendor-dir');
+        $composer = $this->requireComposer();
+        $vendorDir = $composer->getConfig()->get('vendor-dir');
         \assert(\is_string($vendorDir));
-        $store = Store::fromConfig($config);
+        $store = Plugin::store($composer);
 
         $entries = Manifest::inVendorDir($vendorDir)->read();
         if ([] === $entries) {

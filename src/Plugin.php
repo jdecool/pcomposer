@@ -33,11 +33,6 @@ class Plugin implements PluginInterface, EventSubscriberInterface, Capable
         ];
     }
 
-    public function getCapabilities(): array
-    {
-        return [CommandProviderCapability::class => Command\CommandProvider::class];
-    }
-
     public function activate(Composer $composer, IOInterface $io): void
     {
         $pcomposerConfig = Config::fromComposer($composer);
@@ -74,6 +69,11 @@ class Plugin implements PluginInterface, EventSubscriberInterface, Capable
             new Filesystem($process),
             $process,
         ));
+    }
+
+    public function getCapabilities(): array
+    {
+        return [CommandProviderCapability::class => Command\CommandProvider::class];
     }
 
     /** `PCOMPOSER_STORE` env, else `<cache-dir>/pcomposer-store`. */

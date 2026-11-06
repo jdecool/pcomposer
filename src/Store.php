@@ -4,9 +4,6 @@ declare(strict_types=1);
 
 namespace JDecool\Composer\Plugin\PComposer;
 
-use Composer\Config;
-use Composer\Util\Platform;
-
 /**
  * Content-addressable store: one read-only file per (sha256, executable bit),
  * plus one JSON index per package entry listing its files, empty directories and symlinks.
@@ -19,17 +16,13 @@ use Composer\Util\Platform;
  */
 final class Store
 {
-    public function __construct(private readonly string $root)
-    {
-    }
+    private readonly \Closure $linker;
+    private ?string $fallbackReason = null;
 
-    /** `$PCOMPOSER_STORE`, else `<cache-dir>/pcomposer-store`. */
-    public static function fromConfig(Config $config): self
+    /** @param (callable(string $source, string $dest): bool)|null $linker hard-link operation, PHP's link() by default; injectable so tests can make it fail */
+    public function __construct(private readonly string $root, ?callable $linker = null)
     {
-        $cacheDir = $config->get('cache-dir');
-        \assert(\is_string($cacheDir));
-
-        return new self(Platform::getEnv('PCOMPOSER_STORE') ?: $cacheDir.'/pcomposer-store');
+        $this->linker = \Closure::fromCallable($linker ?? link(...));
     }
 
     public function path(): string
@@ -99,21 +92,52 @@ final class Store
     /**
      * Materialises the $key entry into $target with the given strategy (see Config::STRATEGIES).
      *
-     * @param list<string> $copy relative paths materialised as private copies when hard-linking (declared bins)
+     * @param string[] $copy relative paths always materialised as private copies (declared bins)
      *
      * @return string the strategy actually used
      */
     public function materialise(string $key, string $target, string $strategy, array $copy = []): string
     {
         // ponytail: reflink is ticket 06; until then it behaves as copy and is recorded as such.
-        if ('copy' === $strategy || 'reflink' === $strategy) {
-            $this->copy($key, $target);
+        if ('hardlink' === $strategy && $this->canLinkInto($key, $target)) {
+            $this->link($key, $target, $copy);
 
-            return 'copy';
+            return 'hardlink';
         }
-        $this->link($key, $target, $copy);
+        $this->copy($key, $target);
 
-        return 'hardlink';
+        return 'copy';
+    }
+
+    /** Why the first materialisation of this run fell back to copy (store on another filesystem, ...), null if none did. */
+    public function fallbackReason(): ?string
+    {
+        return $this->fallbackReason;
+    }
+
+    /** Tries the entry's first file against a probe path in $target: no upfront filesystem detection, the first link tells. */
+    private function canLinkInto(string $key, string $target): bool
+    {
+        $files = $this->entry($key)['files'];
+        if ([] === $files) {
+            return true;
+        }
+        ['hash' => $hash, 'mode' => $mode] = $files[array_key_first($files)];
+        $this->mkdir($target);
+        $probe = $target.'/.pcomposer-probe';
+        try {
+            $ok = ($this->linker)($this->filePath($hash, 0 !== ($mode & 0100)), $probe);
+            $reason = 'link() returned false';
+        } catch (\Throwable $e) {
+            $ok = false;
+            $reason = $e->getMessage();
+        }
+        @unlink($probe);
+        if (!$ok) {
+            $this->fallbackReason ??= $reason;
+        }
+
+        return $ok;
     }
 
     /**
@@ -132,7 +156,7 @@ final class Store
             $dest = $target.'/'.$relative;
             $this->mkdir(\dirname($dest));
             $source = $this->filePath($hash, 0 !== ($mode & 0100));
-            $ok = \in_array($relative, $copy, true) ? copy($source, $dest) && chmod($dest, $mode) : link($source, $dest);
+            $ok = \in_array($relative, $copy, true) ? copy($source, $dest) && chmod($dest, $mode) : ($this->linker)($source, $dest);
             if (!$ok) {
                 throw new \RuntimeException("Cannot materialise $dest from the store");
             }
@@ -179,7 +203,7 @@ final class Store
                 $stale[] = $index;
                 continue;
             }
-            foreach ($this->entryAt($index) as ['hash' => $hash, 'mode' => $mode]) {
+            foreach ($this->entryAt($index)['files'] as ['hash' => $hash, 'mode' => $mode]) {
                 $referenced[$this->filePath($hash, 0 !== ($mode & 0100))] = true;
             }
         }
@@ -218,7 +242,7 @@ final class Store
         return $this->entryAt($this->indexPath($key));
     }
 
-    /** @return array<string, array{hash: string, mode: int}> */
+    /** @return array{files: array<string, array{hash: string, mode: int}>, dirs: list<string>, links: array<string, string>} */
     private function entryAt(string $index): array
     {
         $json = file_get_contents($index);

@@ -67,6 +67,39 @@ final class StoreTest extends TestCase
         self::assertSame($inode, fileinode($this->tmp.'/out2/a.txt'), 'second ingest replaced the store file');
     }
 
+    public function testAFailingFirstLinkFallsBackToCopyingTheWholePackage(): void
+    {
+        file_put_contents($this->tmp.'/pkg/a.txt', 'content');
+        file_put_contents($this->tmp.'/pkg/bin/b.sh', "#!/bin/sh\n");
+        chmod($this->tmp.'/pkg/bin/b.sh', 0755);
+        $store = new Store($this->tmp.'/store', static fn (): bool => false);
+        $store->ingest('acme/lib@1.0.0.0-ref', $this->tmp.'/pkg');
+
+        self::assertSame('copy', $store->materialise('acme/lib@1.0.0.0-ref', $this->tmp.'/out', 'hardlink'));
+
+        self::assertNotNull($store->fallbackReason());
+        self::assertSame('content', file_get_contents($this->tmp.'/out/a.txt'));
+        self::assertSame(0644, fileperms($this->tmp.'/out/a.txt') & 0777);
+        self::assertSame(0755, fileperms($this->tmp.'/out/bin/b.sh') & 0777);
+        self::assertNotSame(fileinode($this->tmp.'/store/files/'.substr(hash('sha256', 'content'), 0, 2).'/'.hash('sha256', 'content')), fileinode($this->tmp.'/out/a.txt'));
+        self::assertSame(['a.txt', 'bin'], array_values(array_diff((array) scandir($this->tmp.'/out'), ['.', '..'])), 'nothing but the package in the target');
+    }
+
+    public function testALinkFailingAfterTheFirstFileIsAnError(): void
+    {
+        file_put_contents($this->tmp.'/pkg/a.txt', 'a');
+        file_put_contents($this->tmp.'/pkg/b.txt', 'b');
+        $calls = 0;
+        $store = new Store($this->tmp.'/store', static function (string $source, string $dest) use (&$calls): bool {
+            return ++$calls <= 2 && link($source, $dest); // probe + first file succeed, second file fails
+        });
+        $store->ingest('acme/lib@1.0.0.0-ref', $this->tmp.'/pkg');
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Cannot materialise');
+        $store->materialise('acme/lib@1.0.0.0-ref', $this->tmp.'/out', 'hardlink');
+    }
+
     public function testIndexEntryListsFilesEmptyDirectoriesAndSymlinks(): void
     {
         file_put_contents($this->tmp.'/pkg/a.txt', 'content');
