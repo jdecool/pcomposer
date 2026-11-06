@@ -40,9 +40,7 @@ class Plugin implements PluginInterface, EventSubscriberInterface, Capable
         }
 
         $config = $composer->getConfig();
-        $cacheDir = $config->get('cache-dir');
-        \assert(\is_string($cacheDir));
-        $store = new Store(Platform::getEnv('PCOMPOSER_STORE') ?: $cacheDir.'/pcomposer-store');
+        $store = self::store($composer);
         $vendorDir = $config->get('vendor-dir');
         \assert(\is_string($vendorDir));
         $this->manifest = Manifest::inVendorDir($vendorDir);
@@ -69,6 +67,15 @@ class Plugin implements PluginInterface, EventSubscriberInterface, Capable
             new Filesystem($process),
             $process,
         ));
+    }
+
+    /** `PCOMPOSER_STORE` env, else `<cache-dir>/pcomposer-store`. */
+    public static function store(Composer $composer): Store
+    {
+        $cacheDir = $composer->getConfig()->get('cache-dir');
+        \assert(\is_string($cacheDir));
+
+        return new Store(Platform::getEnv('PCOMPOSER_STORE') ?: $cacheDir.'/pcomposer-store');
     }
 
     /** Runs after every install/update batch (`composer remove` fires post-update-cmd too). */

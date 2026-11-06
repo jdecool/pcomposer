@@ -13,6 +13,8 @@ final class CommandProvider implements CommandProviderCapability
         return [
             new StatusCommand(),
             new UnlinkCommand(),
+            new VerifyCommand(),
+            new PruneCommand(),
         ];
     }
 }

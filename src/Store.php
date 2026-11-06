@@ -68,6 +68,34 @@ final class Store
         }
     }
 
+    /**
+     * Rehashes every store file; the expected hash is its file name.
+     *
+     * @return array{checked: int, corrupted: list<string>}
+     */
+    public function verify(): array
+    {
+        $checked = 0;
+        $corrupted = [];
+        foreach ($this->storeFiles() as $path) {
+            ++$checked;
+            if (hash_file('sha256', $path) !== explode('-', basename($path))[0]) {
+                $corrupted[] = $path;
+            }
+        }
+
+        return ['checked' => $checked, 'corrupted' => $corrupted];
+    }
+
+    /** @return list<string> absolute paths of every file under files/ */
+    private function storeFiles(): array
+    {
+        $paths = glob($this->root.'/files/*/*') ?: [];
+        sort($paths);
+
+        return array_values($paths);
+    }
+
     /** @return array<string, array{hash: string, mode: int}> */
     private function entry(string $key): array
     {
