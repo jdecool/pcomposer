@@ -110,7 +110,7 @@ final class StoreZipDownloader extends ZipDownloader
     /** Materialises the stored $key into $path with the configured strategy and records the result in the manifest. */
     private function materialise(PackageInterface $package, string $key, string $path): void
     {
-        $wanted = $this->pcomposerConfig->strategyFor($package->getName());
+        $wanted = $this->pcomposerConfig->strategyFor($package->getName(), $package->getType());
         $strategy = $this->store->materialise($key, $path, $wanted, $package->getBinaries());
         if (!$this->fallbackWarned && null !== ($reason = $this->store->fallbackReason())) {
             $this->fallbackWarned = true;

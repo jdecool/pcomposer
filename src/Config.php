@@ -26,10 +26,14 @@ final class Config
         }
     }
 
-    /** Packages listed in `copy` are always copied; the others use the configured strategy. */
-    public function strategyFor(string $packageName): string
+    /**
+     * Packages listed in `copy` and Composer plugins are always copied; the others use the configured strategy.
+     * Plugins are copied because several of them rewrite their own files on every install
+     * (phpstan/extension-installer, infection/extension-installer), which the read-only store refuses.
+     */
+    public function strategyFor(string $packageName, string $packageType = 'library'): string
     {
-        return \in_array($packageName, $this->copy, true) ? 'copy' : $this->strategy;
+        return 'composer-plugin' === $packageType || \in_array($packageName, $this->copy, true) ? 'copy' : $this->strategy;
     }
 
     public static function fromComposer(Composer $composer): self

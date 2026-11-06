@@ -90,6 +90,21 @@ final class ConfigurationTest extends E2ETestCase
         self::assertSame(['acme/lib' => 'hardlink', 'acme/writer' => 'copy'], array_map(static fn (array $e): string => $e['strategy'], $this->manifest($project)));
     }
 
+    public function testComposerPluginsAreCopied(): void
+    {
+        $this->addPackage('acme/lib', '1.0.0', ['src/Foo.php' => '<?php class Foo {}']);
+        $this->addPackage('acme/plugin', '1.0.0', ['src/Generated.php' => '<?php class G {}'], [], ['type' => 'composer-plugin', 'extra' => ['class' => 'Nope'], 'require' => ['composer-plugin-api' => '^2']]);
+        $project = $this->createProject(['acme/lib' => '1.0.0', 'acme/plugin' => '1.0.0'], ['config' => ['allow-plugins' => ['acme/plugin' => false]]]);
+
+        [$exitCode, $output] = $this->composer($project, ['install']);
+
+        self::assertSame(0, $exitCode, $output);
+        self::assertContains(fileinode($project.'/vendor/acme/lib/src/Foo.php'), $this->storeInodes());
+        self::assertNotContains(fileinode($project.'/vendor/acme/plugin/src/Generated.php'), $this->storeInodes());
+        self::assertSame(0644, fileperms($project.'/vendor/acme/plugin/src/Generated.php') & 0777);
+        self::assertSame(['acme/lib' => 'hardlink', 'acme/plugin' => 'copy'], array_map(static fn (array $e): string => $e['strategy'], $this->manifest($project)));
+    }
+
     public function testPackagesWithPatchesInExtraPatchesAreCopied(): void
     {
         $this->addPackage('acme/lib', '1.0.0', ['src/Foo.php' => '<?php class Foo {}']);

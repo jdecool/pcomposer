@@ -127,6 +127,7 @@ Keys live under `extra.pcomposer` in the root `composer.json`:
 | `extra.pcomposer.strategy` | string         | `hardlink` | `hardlink`, `reflink` or `copy`. Any other value aborts the run with `pcomposer: invalid strategy "...", expected one of hardlink, reflink, copy`. |
 | `extra.pcomposer.copy`     | list of names  | `[]`       | Packages always materialised with `copy`, whatever the strategy.                            |
 | `extra.patches`            | (cweagans/composer-patches) | | Every package that is a key of `extra.patches` is copied, as if listed in `extra.pcomposer.copy`, so applying a patch never modifies the store. |
+| *(package `type`)*         |                |            | Packages of type `composer-plugin` are always copied: several rewrite their own files on install (`phpstan/extension-installer`, `infection/extension-installer`). |
 
 Environment variables override the project:
 
@@ -208,7 +209,7 @@ If the second one fixes it, the problem is in pcomposer; please open an issue wi
 - **No strict dependency isolation.** pnpm's non-flat `node_modules` has no equivalent here: PHP's autoloader is global and `vendor/` keeps Composer's flat layout.
 - **`hardlink` and in-place edits.** With the default strategy, a file in `vendor/` *is* the store's file. Anything that writes into an existing file in place, instead of replacing it, changes the store and therefore every project linked to the same content: patch plugins, `pre-`/`post-package-install` scripts that edit package files, a `chmod` followed by an edit. Store files are read-only (`0444` / `0555`) precisely so that an accidental edit fails rather than propagates. Mitigations, in increasing order of cost:
   - list the packages concerned in `extra.pcomposer.copy`;
-  - packages that are keys of `extra.patches` (cweagans/composer-patches) are already copied automatically;
+  - packages that are keys of `extra.patches` (cweagans/composer-patches) and packages of type `composer-plugin` are already copied automatically;
   - `composer pcomposer:unlink <package>` for a one-off debugging session;
   - `extra.pcomposer.strategy: "reflink"` removes the problem entirely, on a filesystem that supports it;
   - `extra.pcomposer.strategy: "copy"` when it does not.
