@@ -165,6 +165,36 @@ final class Store
         return ['checked' => $checked, 'corrupted' => $corrupted];
     }
 
+    /**
+     * Deletes index entries last used before $olderThan (unix time), then every store file no remaining entry references.
+     *
+     * @return array{entries: list<string>, files: list<string>} what was (or, with $dryRun, would be) deleted
+     */
+    public function prune(int $olderThan, bool $dryRun = false): array
+    {
+        $stale = [];
+        $referenced = [];
+        foreach (glob($this->root.'/index/*/*.json') ?: [] as $index) {
+            if (filemtime($index) < $olderThan) {
+                $stale[] = $index;
+                continue;
+            }
+            foreach ($this->entryAt($index) as ['hash' => $hash, 'mode' => $mode]) {
+                $referenced[$this->filePath($hash, 0 !== ($mode & 0100))] = true;
+            }
+        }
+        $orphans = array_values(array_filter($this->storeFiles(), static fn (string $path): bool => !isset($referenced[$path])));
+        if (!$dryRun) {
+            foreach ([...$stale, ...$orphans] as $path) {
+                if (!unlink($path)) {
+                    throw new \RuntimeException("Cannot delete $path");
+                }
+            }
+        }
+
+        return ['entries' => $stale, 'files' => $orphans];
+    }
+
     /** @return list<string> absolute paths of every file under files/ */
     private function storeFiles(): array
     {
@@ -185,9 +215,15 @@ final class Store
     /** @return array{files: array<string, array{hash: string, mode: int}>, dirs: list<string>, links: array<string, string>} */
     private function entry(string $key): array
     {
-        $json = file_get_contents($this->indexPath($key));
+        return $this->entryAt($this->indexPath($key));
+    }
+
+    /** @return array<string, array{hash: string, mode: int}> */
+    private function entryAt(string $index): array
+    {
+        $json = file_get_contents($index);
         if (false === $json) {
-            throw new \RuntimeException("No store entry for $key");
+            throw new \RuntimeException("No store entry at $index");
         }
         /** @var array{files: array<string, array{hash: string, mode: int}>, dirs?: list<string>, links?: array<string, string>} $data */
         $data = json_decode($json, true, 512, \JSON_THROW_ON_ERROR);

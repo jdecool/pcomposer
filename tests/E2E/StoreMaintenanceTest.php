@@ -46,6 +46,68 @@ final class StoreMaintenanceTest extends E2ETestCase
         self::assertStringNotContainsString(hash('sha256', '<?php class Foo {}'), $output);
     }
 
+    public function testPruneDropsStaleEntriesAndOrphanFilesWhileInstalledProjectsKeepWorking(): void
+    {
+        $this->addPackage('acme/lib', '1.0.0', ['src/Bar.php' => '<?php namespace Foo; class Bar {}'], [], [
+            'autoload' => ['psr-4' => ['Foo\\' => 'src/']],
+        ]);
+        $project = $this->createProject(['acme/lib' => '1.0.0']);
+        [$exitCode, $output] = $this->composer($project, ['install']);
+        self::assertSame(0, $exitCode, $output);
+        $index = $this->indexFile('acme/lib');
+        $filesBefore = \count($this->storeInodes());
+        touch($index, time() - 40 * 86400);
+
+        [$exitCode, $output] = $this->composer($project, ['pcomposer:prune', '--dry-run']);
+        self::assertSame(0, $exitCode, $output);
+        self::assertStringContainsString($index, $output);
+        self::assertFileExists($index);
+        self::assertCount($filesBefore, $this->storeInodes());
+
+        [$exitCode, $output] = $this->composer($project, ['pcomposer:prune']);
+        self::assertSame(0, $exitCode, $output);
+        self::assertFileDoesNotExist($index);
+        self::assertSame([], $this->storeInodes(), 'orphan store files survived the prune');
+
+        exec(\sprintf('cd %s && php -r %s 2>&1', escapeshellarg($project), escapeshellarg('require "vendor/autoload.php"; new Foo\Bar; echo "ok";')), $lines, $code);
+        self::assertSame(['ok'], $lines, implode("\n", $lines));
+
+        $fresh = $this->createProject(['acme/lib' => '1.0.0'], [], 'fresh');
+        [$exitCode, $output] = $this->composer($fresh, ['install']);
+        self::assertSame(0, $exitCode, $output);
+        self::assertFileExists($index);
+        self::assertCount($filesBefore, $this->storeInodes());
+        self::assertContains(fileinode($fresh.'/vendor/acme/lib/src/Bar.php'), $this->storeInodes());
+    }
+
+    public function testPruneHonoursTheWindowAndKeepsFilesStillReferenced(): void
+    {
+        $this->addPackage('acme/old', '1.0.0', ['shared.txt' => 'shared', 'old.txt' => 'old']);
+        $this->addPackage('acme/new', '1.0.0', ['shared.txt' => 'shared', 'new.txt' => 'new']);
+        $project = $this->createProject(['acme/old' => '1.0.0', 'acme/new' => '1.0.0']);
+        [$exitCode, $output] = $this->composer($project, ['install']);
+        self::assertSame(0, $exitCode, $output);
+        touch($this->indexFile('acme/old'), time() - 2 * 3600);
+
+        [$exitCode, $output] = $this->composer($project, ['pcomposer:prune', '--older-than=1y']);
+        self::assertNotSame(0, $exitCode, 'unknown duration unit must be rejected');
+
+        [$exitCode, $output] = $this->composer($project, ['pcomposer:prune', '--older-than=1h']);
+        self::assertSame(0, $exitCode, $output);
+        self::assertCount(0, (array) glob($this->tmp.'/store/index/acme/old@*.json'));
+        self::assertFileExists($this->indexFile('acme/new'));
+        self::assertFileExists($this->storeFile('shared'));
+        self::assertFileExists($this->storeFile('new'));
+        self::assertFileDoesNotExist($this->storeFile('old'));
+    }
+
+    private function storeFile(string $content): string
+    {
+        $hash = hash('sha256', $content);
+
+        return $this->tmp.'/store/files/'.substr($hash, 0, 2).'/'.$hash;
+    }
+
     private function indexFile(string $package): string
     {
         $files = (array) glob($this->tmp.'/store/index/'.$package.'@*.json');
