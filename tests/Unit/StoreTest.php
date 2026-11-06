@@ -66,4 +66,22 @@ final class StoreTest extends TestCase
 
         self::assertSame($inode, fileinode($this->tmp.'/out2/a.txt'), 'second ingest replaced the store file');
     }
+
+    public function testIndexEntryListsFilesEmptyDirectoriesAndSymlinks(): void
+    {
+        file_put_contents($this->tmp.'/pkg/a.txt', 'content');
+        mkdir($this->tmp.'/pkg/empty');
+        symlink('a.txt', $this->tmp.'/pkg/b.txt');
+        symlink('bin', $this->tmp.'/pkg/bin-alias');
+        $store = new Store($this->tmp.'/store');
+
+        $store->ingest('acme/lib@1.0.0.0-ref', $this->tmp.'/pkg');
+
+        $index = json_decode((string) file_get_contents($this->tmp.'/store/index/acme/lib@1.0.0.0-ref.json'), true);
+        self::assertSame([
+            'files' => ['a.txt' => ['hash' => hash('sha256', 'content'), 'mode' => 0644]],
+            'dirs' => ['bin', 'empty'],
+            'links' => ['b.txt' => 'a.txt', 'bin-alias' => 'bin'],
+        ], $index);
+    }
 }
