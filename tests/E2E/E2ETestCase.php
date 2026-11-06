@@ -54,16 +54,37 @@ abstract class E2ETestCase extends TestCase
     }
 
     /**
+     * Builds a package served by the fixture's `path` repository (installed by Composer's path downloader).
+     *
+     * @param array<string, string> $files relative path => content
+     *
+     * @return string package dir
+     */
+    protected function addPathPackage(string $name, string $version, array $files = []): string
+    {
+        $dir = $this->tmp.'/paths/'.str_replace('/', '-', $name);
+        mkdir($dir, 0777, true);
+        file_put_contents($dir.'/composer.json', self::json(['name' => $name, 'version' => $version]));
+        foreach ($files as $path => $content) {
+            @mkdir(\dirname($dir.'/'.$path), 0777, true);
+            file_put_contents($dir.'/'.$path, $content);
+        }
+
+        return $dir;
+    }
+
+    /**
      * Creates a fixture project requiring the plugin (from this repository) and the given packages.
      *
      * @param array<string, string> $require name => constraint
      * @param array<string, mixed>  $extra   extra root composer.json fields, merged over the defaults
+     * @param string                $name    directory name, to create several projects in one test
      *
      * @return string fixture project dir
      */
-    protected function createProject(array $require = [], array $extra = []): string
+    protected function createProject(array $require = [], array $extra = [], string $name = 'project'): string
     {
-        $dir = $this->tmp.'/project';
+        $dir = $this->tmp.'/'.$name;
         mkdir($dir);
         /** @var array<string, mixed> $json */
         $json = array_replace_recursive([
@@ -72,6 +93,7 @@ abstract class E2ETestCase extends TestCase
             'repositories' => [
                 ['type' => 'path', 'url' => \dirname(__DIR__, 2), 'options' => ['versions' => ['jdecool/pcomposer' => '1.0.0']]],
                 ['type' => 'artifact', 'url' => $this->tmp.'/artifacts'],
+                ['type' => 'path', 'url' => $this->tmp.'/paths/*'],
                 ['packagist.org' => false],
             ],
             'config' => ['allow-plugins' => ['jdecool/pcomposer' => true]],
