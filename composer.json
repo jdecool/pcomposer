@@ -2,6 +2,8 @@
     "name": "jdecool/pcomposer",
     "description": "pnpm-style content-addressable store for Composer: extract once, hardlink/reflink into vendor/",
     "type": "composer-plugin",
+    "keywords": ["composer", "plugin", "pnpm", "content-addressable", "hardlink", "reflink", "cache"],
+    "homepage": "https://github.com/jdecool/pcomposer",
     "license": "MIT",
     "require": {
         "php": "^8.1",
