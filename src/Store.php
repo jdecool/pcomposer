@@ -120,7 +120,7 @@ final class Store
      * Materialises the $key entry into $target (created if missing): files hard-linked,
      * empty directories created, symlinks recreated with their original target.
      *
-     * @param list<string> $copy relative paths materialised as private copies with normal permissions (declared bins)
+     * @param string[] $copy relative paths materialised as private copies with normal permissions (declared bins)
      */
     public function link(string $key, string $target, array $copy = []): void
     {
