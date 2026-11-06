@@ -17,12 +17,17 @@ namespace JDecool\Composer\Plugin\PComposer;
 final class Store
 {
     private readonly \Closure $linker;
+    private readonly \Closure $cloner;
     private ?string $fallbackReason = null;
 
-    /** @param (callable(string $source, string $dest): bool)|null $linker hard-link operation, PHP's link() by default; injectable so tests can make it fail */
-    public function __construct(private readonly string $root, ?callable $linker = null)
+    /**
+     * @param (callable(string $source, string $dest): bool)|null        $linker hard-link operation, PHP's link() by default; injectable so tests can make it fail
+     * @param (callable(list<string> $sources, string $dir): bool)|null $cloner copy-on-write clone of many files into one directory, keeping their names; one `cp` process by default
+     */
+    public function __construct(private readonly string $root, ?callable $linker = null, ?callable $cloner = null)
     {
         $this->linker = \Closure::fromCallable($linker ?? link(...));
+        $this->cloner = \Closure::fromCallable($cloner ?? self::cloneInto(...));
     }
 
     public function path(): string
@@ -98,11 +103,15 @@ final class Store
      */
     public function materialise(string $key, string $target, string $strategy, array $copy = []): string
     {
-        // ponytail: reflink is ticket 06; until then it behaves as copy and is recorded as such.
-        if ('hardlink' === $strategy && $this->canLinkInto($key, $target)) {
+        if ('hardlink' === $strategy && $this->canMaterialiseInto($key, $target, $strategy)) {
             $this->link($key, $target, $copy);
 
             return 'hardlink';
+        }
+        if ('reflink' === $strategy && $this->canMaterialiseInto($key, $target, $strategy)) {
+            $this->reflink($key, $target, $copy);
+
+            return 'reflink';
         }
         $this->copy($key, $target);
 
@@ -115,19 +124,20 @@ final class Store
         return $this->fallbackReason;
     }
 
-    /** Tries the entry's first file against a probe path in $target: no upfront filesystem detection, the first link tells. */
-    private function canLinkInto(string $key, string $target): bool
+    /** Tries the entry's first file against a probe path in $target: no upfront filesystem detection, the first link or clone tells. */
+    private function canMaterialiseInto(string $key, string $target, string $strategy): bool
     {
         $files = $this->entry($key)['files'];
         if ([] === $files) {
             return true;
         }
         ['hash' => $hash, 'mode' => $mode] = $files[array_key_first($files)];
+        $source = $this->filePath($hash, 0 !== ($mode & 0100));
         $this->mkdir($target);
-        $probe = $target.'/.pcomposer-probe';
+        $probe = 'reflink' === $strategy ? $target.'/'.basename($source) : $target.'/.pcomposer-probe';
         try {
-            $ok = ($this->linker)($this->filePath($hash, 0 !== ($mode & 0100)), $probe);
-            $reason = 'link() returned false';
+            $ok = 'reflink' === $strategy ? ($this->cloner)([$source], $target) : ($this->linker)($source, $probe);
+            $reason = "$strategy operation returned false";
         } catch (\Throwable $e) {
             $ok = false;
             $reason = $e->getMessage();
@@ -149,9 +159,6 @@ final class Store
     public function link(string $key, string $target, array $copy = []): void
     {
         $entry = $this->entry($key);
-        foreach ($entry['dirs'] as $dir) {
-            $this->mkdir($target.'/'.$dir);
-        }
         foreach ($entry['files'] as $relative => ['hash' => $hash, 'mode' => $mode]) {
             $dest = $target.'/'.$relative;
             $this->mkdir(\dirname($dest));
@@ -160,6 +167,60 @@ final class Store
             if (!$ok) {
                 throw new \RuntimeException("Cannot materialise $dest from the store");
             }
+        }
+        $this->recreate($target, $entry);
+    }
+
+    /**
+     * Like link(), with files cloned copy-on-write: one `cp` per target directory clones the store files under their
+     * hash names, then each is renamed to its package name (same directory, so a rename is free) and given normal permissions.
+     *
+     * @param string[] $copy relative paths materialised as private copies (declared bins)
+     */
+    private function reflink(string $key, string $target, array $copy): void
+    {
+        $entry = $this->entry($key);
+        $byDir = [];
+        foreach ($entry['files'] as $relative => ['hash' => $hash, 'mode' => $mode]) {
+            $dest = $target.'/'.$relative;
+            $source = $this->filePath($hash, 0 !== ($mode & 0100));
+            if (\in_array($relative, $copy, true)) {
+                $this->mkdir(\dirname($dest));
+                if (!copy($source, $dest) || !chmod($dest, $mode)) {
+                    throw new \RuntimeException("Cannot materialise $dest from the store");
+                }
+                continue;
+            }
+            $byDir[\dirname($dest)][$dest] = [$source, $mode];
+        }
+        foreach ($byDir as $dir => $files) {
+            $this->mkdir($dir);
+            // ponytail: one argv per directory; chunk if a package ever has enough files in one directory to hit ARG_MAX.
+            if (!($this->cloner)(array_values(array_unique(array_column($files, 0))), $dir)) {
+                throw new \RuntimeException("Cannot clone into $dir from the store");
+            }
+            $placed = [];
+            foreach ($files as $dest => [$source, $mode]) {
+                // Identical content twice in one directory: the clone was consumed by the first rename, copy the sibling.
+                $ok = isset($placed[$source]) ? copy($placed[$source], $dest) : rename($dir.'/'.basename($source), $dest);
+                $placed[$source] ??= $dest;
+                if (!$ok || !chmod($dest, $mode)) {
+                    throw new \RuntimeException("Cannot materialise $dest from the store");
+                }
+            }
+        }
+        $this->recreate($target, $entry);
+    }
+
+    /**
+     * Recreates the entry's empty directories and symlinks (with their original targets) under $target.
+     *
+     * @param array{dirs: list<string>, links: array<string, string>} $entry
+     */
+    private function recreate(string $target, array $entry): void
+    {
+        foreach ($entry['dirs'] as $dir) {
+            $this->mkdir($target.'/'.$dir);
         }
         foreach ($entry['links'] as $relative => $to) {
             $dest = $target.'/'.$relative;
@@ -284,6 +345,28 @@ final class Store
             @unlink($tmp);
             throw new \RuntimeException("Cannot write $storeFile to the store");
         }
+    }
+
+    /**
+     * One `cp` process cloning every source into $dir (copy-on-write: `cp -c` on macOS, `cp --reflink=always` elsewhere).
+     * Throws with cp's stderr when the filesystem refuses; macOS silently copies on non-APFS volumes.
+     *
+     * @param list<string> $sources
+     */
+    private static function cloneInto(array $sources, string $dir): bool
+    {
+        $cp = 'Darwin' === \PHP_OS_FAMILY ? ['cp', '-c'] : ['cp', '--reflink=always'];
+        $process = proc_open([...$cp, ...$sources, $dir.'/'], [2 => ['pipe', 'w']], $pipes);
+        if (false === $process) {
+            throw new \RuntimeException('Cannot start cp');
+        }
+        $stderr = trim((string) stream_get_contents($pipes[2]));
+        fclose($pipes[2]);
+        if (0 !== $code = proc_close($process)) {
+            throw new \RuntimeException('' !== $stderr ? $stderr : "cp exited with $code");
+        }
+
+        return true;
     }
 
     private function mkdir(string $dir): void
