@@ -347,7 +347,10 @@ final class Store
         return $this->root.'/index/'.$safe($vendor).'/'.$safe($rest).'.json';
     }
 
-    /** Atomic temp + rename; an existing entry is left untouched. */
+    /**
+     * Atomic temp + link: link() fails when the destination exists, so two processes ingesting the same
+     * content never replace each other's inode (a rename would). An existing entry is left untouched.
+     */
     private function put(string $storeFile, string $source, bool $executable): void
     {
         if (file_exists($storeFile)) {
@@ -355,8 +358,9 @@ final class Store
         }
         $this->mkdir(\dirname($storeFile));
         $tmp = \dirname($storeFile).'/.tmp-'.bin2hex(random_bytes(8));
-        if (!copy($source, $tmp) || !chmod($tmp, $executable ? 0555 : 0444) || !rename($tmp, $storeFile)) {
-            @unlink($tmp);
+        $ok = copy($source, $tmp) && chmod($tmp, $executable ? 0555 : 0444) && (@link($tmp, $storeFile) || file_exists($storeFile));
+        @unlink($tmp);
+        if (!$ok) {
             throw new \RuntimeException("Cannot write $storeFile to the store");
         }
     }

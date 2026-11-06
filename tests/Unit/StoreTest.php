@@ -67,6 +67,23 @@ final class StoreTest extends TestCase
         self::assertSame($inode, fileinode($this->tmp.'/out2/a.txt'), 'second ingest replaced the store file');
     }
 
+    public function testConcurrentIngestOfTheSameFileKeepsTheFirstInode(): void
+    {
+        file_put_contents($this->tmp.'/pkg/a.txt', 'content');
+        $hash = hash('sha256', 'content');
+        $storeFile = $this->tmp.'/store/files/'.substr($hash, 0, 2).'/'.$hash;
+        mkdir(\dirname($storeFile), 0777, true);
+        file_put_contents($storeFile, 'content'); // another process finished first
+        chmod($storeFile, 0444);
+        $inode = fileinode($storeFile);
+
+        (new Store($this->tmp.'/store'))->ingest('acme/lib@1.0.0.0-ref', $this->tmp.'/pkg');
+
+        clearstatcache();
+        self::assertSame($inode, fileinode($storeFile), 'the second ingest replaced the store file');
+        self::assertSame([], array_values(array_diff((array) scandir(\dirname($storeFile)), ['.', '..', $hash])), 'temp file left behind');
+    }
+
     public function testAFailingFirstLinkFallsBackToCopyingTheWholePackage(): void
     {
         file_put_contents($this->tmp.'/pkg/a.txt', 'content');
