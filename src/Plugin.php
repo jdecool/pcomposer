@@ -8,13 +8,15 @@ use Composer\Cache;
 use Composer\Composer;
 use Composer\EventDispatcher\EventSubscriberInterface;
 use Composer\IO\IOInterface;
+use Composer\Plugin\Capability\CommandProvider as CommandProviderCapability;
+use Composer\Plugin\Capable;
 use Composer\Plugin\PluginInterface;
 use Composer\Script\Event;
 use Composer\Script\ScriptEvents;
 use Composer\Util\Filesystem;
 use Composer\Util\Platform;
 
-class Plugin implements PluginInterface, EventSubscriberInterface
+class Plugin implements PluginInterface, EventSubscriberInterface, Capable
 {
     private ?Manifest $manifest = null;
 
@@ -24,6 +26,11 @@ class Plugin implements PluginInterface, EventSubscriberInterface
             ScriptEvents::POST_INSTALL_CMD => 'writeManifest',
             ScriptEvents::POST_UPDATE_CMD => 'writeManifest',
         ];
+    }
+
+    public function getCapabilities(): array
+    {
+        return [CommandProviderCapability::class => Command\CommandProvider::class];
     }
 
     public function activate(Composer $composer, IOInterface $io): void
