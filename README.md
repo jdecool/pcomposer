@@ -69,7 +69,7 @@ Files are keyed by SHA-256 plus the executable bit, so identical content shared 
 }
 ```
 
-It is written after every `install`, `update` and `remove`. Packages installed by Composer's normal path never appear; entries whose package is no longer installed at the recorded version are dropped. The `pcomposer:*` commands read it, so they never scan inodes.
+It is written after every `install`, `update` and `remove`, with or without `--no-scripts` (that flag only skips the scripts of `composer.json`, not plugin listeners). Packages installed by Composer's normal path never appear; entries whose package is no longer installed at the recorded version are dropped. The `pcomposer:*` commands read it, so they never scan inodes.
 
 ### What is and is not handled
 

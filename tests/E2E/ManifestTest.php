@@ -61,6 +61,21 @@ final class ManifestTest extends E2ETestCase
         self::assertSame(['acme/zed'], array_keys($this->manifest($project)));
     }
 
+    public function testTheManifestIsWrittenWithoutScripts(): void
+    {
+        $this->addPackage('acme/lib', '1.0.0', ['src/Foo.php' => '<?php class Foo {}']);
+        $this->addPackage('acme/zed', '1.0.0', ['src/Zed.php' => '<?php class Zed {}']);
+        $project = $this->createProject(['acme/lib' => '1.0.0', 'acme/zed' => '1.0.0']);
+
+        [$exitCode, $output] = $this->composer($project, ['install', '--no-scripts']);
+        self::assertSame(0, $exitCode, $output);
+        self::assertSame(['acme/lib', 'acme/zed'], array_keys($this->manifest($project)));
+
+        [$exitCode, $output] = $this->composer($project, ['remove', 'acme/lib', '--no-scripts']);
+        self::assertSame(0, $exitCode, $output);
+        self::assertSame(['acme/zed'], array_keys($this->manifest($project)));
+    }
+
     public function testRemovingAPackageStillLinkedByAnotherProjectLeavesThatProjectWorking(): void
     {
         $this->addPackage('acme/lib', '1.0.0', ['src/Bar.php' => '<?php namespace Foo; class Bar {}'], [], [
