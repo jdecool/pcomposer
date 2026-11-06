@@ -33,10 +33,12 @@ abstract class E2ETestCase extends TestCase
      * @param array<string, string> $files      relative path => content
      * @param list<string>          $executable relative paths that get the executable bit
      * @param array<string, mixed>  $extra      extra composer.json fields (bin, autoload, ...)
+     * @param array<string, string> $links      relative path => symlink target, as written in the archive
+     * @param list<string>          $dirs       relative paths of empty directories
      *
      * @return string path of the zip
      */
-    protected function addPackage(string $name, string $version, array $files = [], array $executable = [], array $extra = []): string
+    protected function addPackage(string $name, string $version, array $files = [], array $executable = [], array $extra = [], array $links = [], array $dirs = []): string
     {
         $zipPath = $this->tmp.'/artifacts/'.str_replace('/', '-', $name).'-'.$version.'.zip';
         $zip = new \ZipArchive();
@@ -47,6 +49,13 @@ abstract class E2ETestCase extends TestCase
             if (\in_array($path, $executable, true)) {
                 $zip->setExternalAttributesName($path, \ZipArchive::OPSYS_UNIX, 0100755 << 16);
             }
+        }
+        foreach ($links as $path => $to) {
+            $zip->addFromString($path, $to);
+            $zip->setExternalAttributesName($path, \ZipArchive::OPSYS_UNIX, 0120777 << 16);
+        }
+        foreach ($dirs as $dir) {
+            $zip->addEmptyDir($dir);
         }
         $zip->close();
 

@@ -6,12 +6,13 @@ namespace JDecool\Composer\Plugin\PComposer;
 
 /**
  * Content-addressable store: one read-only file per (sha256, executable bit),
- * plus one JSON index per package entry listing its files.
+ * plus one JSON index per package entry listing its files, empty directories and symlinks.
  *
  * Layout:
  *   files/<hh>/<sha256>      regular file, 0444
  *   files/<hh>/<sha256>-x    executable file, 0555
  *   index/<vendor>/<name>@<version>-<reference>.json
+ *     {"files": {<path>: {"hash", "mode"}}, "dirs": [<path>], "links": {<path>: <symlink target>}}
  */
 final class Store
 {
@@ -20,35 +21,43 @@ final class Store
     }
 
     /**
-     * Copies every regular file under $dir into the store and writes the index entry for $key.
+     * Copies every regular file under $dir into the store and writes the index entry for $key:
+     * regular files by hash, empty directories and symlinks (never descended into) by path.
      *
      * @return array<string, array{hash: string, mode: int}> relative path => entry
      */
     public function ingest(string $key, string $dir): array
     {
-        $files = [];
-        $it = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS));
+        $files = $links = $dirs = [];
+        $it = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS), \RecursiveIteratorIterator::SELF_FIRST);
         foreach ($it as $file) {
             /** @var \SplFileInfo $file */
-            if (!$file->isFile() || $file->isLink()) {
-                continue; // ponytail: symlinks and empty dirs are ticket 07
-            }
             $path = $file->getPathname();
-            $executable = $file->isExecutable();
-            $hash = hash_file('sha256', $path);
-            if (false === $hash) {
-                throw new \RuntimeException("Cannot hash $path");
-            }
-            $this->put($this->filePath($hash, $executable), $path, $executable);
             $relative = substr($path, \strlen($dir) + 1);
-            $files[$relative] = ['hash' => $hash, 'mode' => $executable ? 0755 : 0644];
+            if ($file->isLink()) {
+                $links[$relative] = (string) readlink($path);
+            } elseif ($file->isDir()) {
+                if (0 === iterator_count(new \FilesystemIterator($path))) {
+                    $dirs[] = $relative;
+                }
+            } elseif ($file->isFile()) {
+                $executable = $file->isExecutable();
+                $hash = hash_file('sha256', $path);
+                if (false === $hash) {
+                    throw new \RuntimeException("Cannot hash $path");
+                }
+                $this->put($this->filePath($hash, $executable), $path, $executable);
+                $files[$relative] = ['hash' => $hash, 'mode' => $executable ? 0755 : 0644];
+            }
         }
         ksort($files);
+        ksort($links);
+        sort($dirs);
 
         $index = $this->indexPath($key);
         $this->mkdir(\dirname($index));
         $tmp = $index.'.'.bin2hex(random_bytes(4));
-        file_put_contents($tmp, json_encode(['files' => $files], \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES | \JSON_THROW_ON_ERROR));
+        file_put_contents($tmp, json_encode(['files' => $files, 'dirs' => $dirs, 'links' => $links], \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES | \JSON_THROW_ON_ERROR));
         rename($tmp, $index);
 
         return $files;
@@ -75,19 +84,31 @@ final class Store
     }
 
     /**
-     * Hard-links every file of the $key entry into $target (created if missing).
+     * Materialises the $key entry into $target (created if missing): files hard-linked,
+     * empty directories created, symlinks recreated with their original target.
      *
      * @param list<string> $copy relative paths materialised as private copies with normal permissions (declared bins)
      */
     public function link(string $key, string $target, array $copy = []): void
     {
-        foreach ($this->entry($key) as $relative => ['hash' => $hash, 'mode' => $mode]) {
+        $entry = $this->entry($key);
+        foreach ($entry['dirs'] as $dir) {
+            $this->mkdir($target.'/'.$dir);
+        }
+        foreach ($entry['files'] as $relative => ['hash' => $hash, 'mode' => $mode]) {
             $dest = $target.'/'.$relative;
             $this->mkdir(\dirname($dest));
             $source = $this->filePath($hash, 0 !== ($mode & 0100));
             $ok = \in_array($relative, $copy, true) ? copy($source, $dest) && chmod($dest, $mode) : link($source, $dest);
             if (!$ok) {
                 throw new \RuntimeException("Cannot materialise $dest from the store");
+            }
+        }
+        foreach ($entry['links'] as $relative => $to) {
+            $dest = $target.'/'.$relative;
+            $this->mkdir(\dirname($dest));
+            if (!symlink($to, $dest)) {
+                throw new \RuntimeException("Cannot create symlink $dest");
             }
         }
     }
@@ -125,26 +146,20 @@ final class Store
      */
     public function copy(string $key, string $target): void
     {
-        foreach ($this->entry($key) as $relative => ['hash' => $hash, 'mode' => $mode]) {
-            $dest = $target.'/'.$relative;
-            $this->mkdir(\dirname($dest));
-            if (!copy($this->filePath($hash, 0 !== ($mode & 0100)), $dest) || !chmod($dest, $mode)) {
-                throw new \RuntimeException("Cannot copy $dest from the store");
-            }
-        }
+        $this->link($key, $target, array_keys($this->entry($key)['files']));
     }
 
-    /** @return array<string, array{hash: string, mode: int}> */
+    /** @return array{files: array<string, array{hash: string, mode: int}>, dirs: list<string>, links: array<string, string>} */
     private function entry(string $key): array
     {
         $json = file_get_contents($this->indexPath($key));
         if (false === $json) {
             throw new \RuntimeException("No store entry for $key");
         }
-        /** @var array{files: array<string, array{hash: string, mode: int}>} $data */
+        /** @var array{files: array<string, array{hash: string, mode: int}>, dirs?: list<string>, links?: array<string, string>} $data */
         $data = json_decode($json, true, 512, \JSON_THROW_ON_ERROR);
 
-        return $data['files'];
+        return $data + ['dirs' => [], 'links' => []];
     }
 
     private function filePath(string $hash, bool $executable): string
