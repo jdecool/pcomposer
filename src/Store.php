@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace JDecool\Composer\Plugin\PComposer;
 
+use Composer\Config;
+use Composer\Util\Platform;
+
 /**
  * Content-addressable store: one read-only file per (sha256, executable bit),
  * plus one JSON index per package entry listing its files, empty directories and symlinks.
@@ -18,6 +21,36 @@ final class Store
 {
     public function __construct(private readonly string $root)
     {
+    }
+
+    /** `$PCOMPOSER_STORE`, else `<cache-dir>/pcomposer-store`. */
+    public static function fromConfig(Config $config): self
+    {
+        $cacheDir = $config->get('cache-dir');
+        \assert(\is_string($cacheDir));
+
+        return new self(Platform::getEnv('PCOMPOSER_STORE') ?: $cacheDir.'/pcomposer-store');
+    }
+
+    public function path(): string
+    {
+        return $this->root;
+    }
+
+    /** Total size in bytes of the stored files (0 when the store does not exist yet). */
+    public function size(): int
+    {
+        if (!is_dir($this->root.'/files')) {
+            return 0;
+        }
+        $size = 0;
+        $it = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($this->root.'/files', \FilesystemIterator::SKIP_DOTS));
+        foreach ($it as $file) {
+            /** @var \SplFileInfo $file */
+            $size += $file->getSize();
+        }
+
+        return $size;
     }
 
     /**
