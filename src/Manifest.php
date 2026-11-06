@@ -65,7 +65,23 @@ final class Manifest
             \ARRAY_FILTER_USE_BOTH,
         );
         ksort($entries);
+        $this->save($entries);
+    }
 
+    /** Rewrites the strategy of an existing entry in place. */
+    public function setStrategy(string $name, string $strategy): void
+    {
+        $entries = $this->read();
+        if (!isset($entries[$name])) {
+            throw new \InvalidArgumentException("$name is not in the manifest");
+        }
+        $entries[$name]['strategy'] = $strategy;
+        $this->save($entries);
+    }
+
+    /** @param array<string, array{name: string, version: string, reference: string, strategy: string}> $entries */
+    private function save(array $entries): void
+    {
         if (!is_dir(\dirname($this->path))) {
             mkdir(\dirname($this->path), 0777, true);
         }
