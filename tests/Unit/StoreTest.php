@@ -127,6 +127,7 @@ final class StoreTest extends TestCase
         $cloner = static function (array $sources, string $dir) use (&$batches): bool {
             $batches[] = [$sources, $dir];
             foreach ($sources as $source) {
+                \assert(\is_string($source));
                 copy($source, $dir.'/'.basename($source));
             }
 

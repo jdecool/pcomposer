@@ -21,7 +21,7 @@ final class Store
     private ?string $fallbackReason = null;
 
     /**
-     * @param (callable(string $source, string $dest): bool)|null        $linker hard-link operation, PHP's link() by default; injectable so tests can make it fail
+     * @param (callable(string $source, string $dest): bool)|null       $linker hard-link operation, PHP's link() by default; injectable so tests can make it fail
      * @param (callable(list<string> $sources, string $dir): bool)|null $cloner copy-on-write clone of many files into one directory, keeping their names; one `cp` process by default
      */
     public function __construct(private readonly string $root, ?callable $linker = null, ?callable $cloner = null)
