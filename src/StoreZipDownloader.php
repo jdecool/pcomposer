@@ -26,6 +26,8 @@ use Symfony\Component\Finder\Finder;
  */
 class StoreZipDownloader extends ZipDownloader
 {
+    private bool $fallbackWarned = false;
+
     public function __construct(
         private readonly Config $pcomposerConfig,
         private readonly Store $store,
@@ -84,7 +86,12 @@ class StoreZipDownloader extends ZipDownloader
                 }
                 $key = self::storeKey($package);
                 $this->store->ingest($key, self::packageRoot($temporaryDir));
-                $strategy = $this->store->materialise($key, $path, $this->pcomposerConfig->strategyFor($package->getName()), $package->getBinaries());
+                $wanted = $this->pcomposerConfig->strategyFor($package->getName());
+                $strategy = $this->store->materialise($key, $path, $wanted, $package->getBinaries());
+                if (!$this->fallbackWarned && null !== ($reason = $this->store->fallbackReason())) {
+                    $this->fallbackWarned = true;
+                    $this->io->writeError("<warning>pcomposer: $wanted failed ($reason), falling back to copy for this run</warning>");
+                }
                 // `composer status` installs into `<path>_compare` to diff: only the real install path counts.
                 if ($this->filesystem->normalizePath($path) === $this->filesystem->normalizePath((string) $this->installationManager->getInstallPath($package))) {
                     $this->manifest->record($package, $strategy);
