@@ -104,6 +104,26 @@ final class ConfigurationTest extends E2ETestCase
         self::assertSame(['acme/lib' => 'hardlink', 'acme/patched' => 'copy'], array_map(static fn (array $e): string => $e['strategy'], $this->manifest($project)));
     }
 
+    public function testStoreEnvironmentVariableRelocatesTheStore(): void
+    {
+        $this->addPackage('acme/lib', '1.0.0', ['src/Foo.php' => '<?php class Foo {}']);
+        $project = $this->createProject(['acme/lib' => '1.0.0']);
+        $store = $this->tmp.'/elsewhere/my-store';
+
+        [$exitCode, $output] = $this->composer($project, ['install'], ['PCOMPOSER_STORE' => $store]);
+
+        self::assertSame(0, $exitCode, $output);
+        self::assertDirectoryDoesNotExist($this->tmp.'/store');
+        self::assertDirectoryDoesNotExist($this->tmp.'/cache/pcomposer-store');
+        $inode = fileinode($project.'/vendor/acme/lib/src/Foo.php');
+        $found = false;
+        foreach (new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($store.'/files', \FilesystemIterator::SKIP_DOTS)) as $file) {
+            /** @var \SplFileInfo $file */
+            $found = $found || $file->getInode() === $inode;
+        }
+        self::assertTrue($found, 'installed file is not hard-linked into the relocated store');
+    }
+
     /** @return array<string, array{name: string, version: string, reference: string, strategy: string}> */
     private function manifest(string $project): array
     {

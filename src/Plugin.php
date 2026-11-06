@@ -20,6 +20,11 @@ class Plugin implements PluginInterface, EventSubscriberInterface, Capable
 {
     private ?Manifest $manifest = null;
 
+    /** Composer instantiates plugins without arguments; the seam exists for the Windows unit test. */
+    public function __construct(private readonly ?bool $isWindows = null)
+    {
+    }
+
     public static function getSubscribedEvents(): array
     {
         return [
@@ -36,7 +41,7 @@ class Plugin implements PluginInterface, EventSubscriberInterface, Capable
     public function activate(Composer $composer, IOInterface $io): void
     {
         $pcomposerConfig = Config::fromComposer($composer);
-        if (Platform::isWindows() || !$pcomposerConfig->enabled) {
+        if (($this->isWindows ?? Platform::isWindows()) || !$pcomposerConfig->enabled) {
             return;
         }
 
