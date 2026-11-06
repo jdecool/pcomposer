@@ -24,7 +24,7 @@ use Symfony\Component\Finder\Finder;
  * extracted next to the target, ingested into the store, then materialised into place
  * with the strategy Config picks for the package.
  */
-class StoreZipDownloader extends ZipDownloader
+final class StoreZipDownloader extends ZipDownloader
 {
     private bool $fallbackWarned = false;
 

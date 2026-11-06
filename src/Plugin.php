@@ -16,7 +16,7 @@ use Composer\Script\ScriptEvents;
 use Composer\Util\Filesystem;
 use Composer\Util\Platform;
 
-class Plugin implements PluginInterface, EventSubscriberInterface, Capable
+final class Plugin implements PluginInterface, EventSubscriberInterface, Capable
 {
     private ?Manifest $manifest = null;
 
@@ -42,9 +42,7 @@ class Plugin implements PluginInterface, EventSubscriberInterface, Capable
 
         $config = $composer->getConfig();
         $store = self::store($composer);
-        $vendorDir = $config->get('vendor-dir');
-        \assert(\is_string($vendorDir));
-        $this->manifest = Manifest::inVendorDir($vendorDir);
+        $this->manifest = self::manifest($composer);
 
         // Same wiring as Composer\Factory::createDownloadManager for the stock zip downloader.
         $cache = null;
@@ -83,6 +81,15 @@ class Plugin implements PluginInterface, EventSubscriberInterface, Capable
         \assert(\is_string($cacheDir));
 
         return new Store(Platform::getEnv('PCOMPOSER_STORE') ?: $cacheDir.'/pcomposer-store');
+    }
+
+    /** `<vendor-dir>/composer/pcomposer.json`. */
+    public static function manifest(Composer $composer): Manifest
+    {
+        $vendorDir = $composer->getConfig()->get('vendor-dir');
+        \assert(\is_string($vendorDir));
+
+        return Manifest::inVendorDir($vendorDir);
     }
 
     /** Runs after every install/update batch (`composer remove` fires post-update-cmd too). */

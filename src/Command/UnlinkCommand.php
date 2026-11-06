@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace JDecool\Composer\Plugin\PComposer\Command;
 
 use Composer\Command\BaseCommand;
-use JDecool\Composer\Plugin\PComposer\Manifest;
+use JDecool\Composer\Plugin\PComposer\Plugin;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
@@ -25,9 +25,7 @@ final class UnlinkCommand extends BaseCommand
         $name = $input->getArgument('package');
         \assert(\is_string($name));
         $composer = $this->requireComposer();
-        $vendorDir = $composer->getConfig()->get('vendor-dir');
-        \assert(\is_string($vendorDir));
-        $manifest = Manifest::inVendorDir($vendorDir);
+        $manifest = Plugin::manifest($composer);
 
         $entry = $manifest->read()[$name] ?? null;
         $package = $composer->getRepositoryManager()->getLocalRepository()->findPackage($name, '*');

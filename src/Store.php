@@ -55,10 +55,8 @@ final class Store
     /**
      * Copies every regular file under $dir into the store and writes the index entry for $key:
      * regular files by hash, empty directories and symlinks (never descended into) by path.
-     *
-     * @return array<string, array{hash: string, mode: int}> relative path => entry
      */
-    public function ingest(string $key, string $dir): array
+    public function ingest(string $key, string $dir): void
     {
         $files = $links = $dirs = [];
         $it = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS), \RecursiveIteratorIterator::SELF_FIRST);
@@ -91,8 +89,6 @@ final class Store
         $tmp = $index.'.'.bin2hex(random_bytes(4));
         file_put_contents($tmp, json_encode(['files' => $files, 'dirs' => $dirs, 'links' => $links], \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES | \JSON_THROW_ON_ERROR));
         rename($tmp, $index);
-
-        return $files;
     }
 
     /** Whether $key was ingested before (its index entry exists). */
@@ -144,8 +140,7 @@ final class Store
         if ([] === $files) {
             return true;
         }
-        ['hash' => $hash, 'mode' => $mode] = $files[array_key_first($files)];
-        $source = $this->filePath($hash, 0 !== ($mode & 0100));
+        $source = $this->filePathFor($files[array_key_first($files)]);
         $this->mkdir($target);
         $probe = 'reflink' === $strategy ? $target.'/'.basename($source) : $target.'/.pcomposer-probe';
         try {
@@ -172,12 +167,14 @@ final class Store
     public function link(string $key, string $target, array $copy = []): void
     {
         $entry = $this->entry($key);
-        foreach ($entry['files'] as $relative => ['hash' => $hash, 'mode' => $mode]) {
+        foreach ($entry['files'] as $relative => $file) {
             $dest = $target.'/'.$relative;
+            if (\in_array($relative, $copy, true)) {
+                $this->copyPrivate($this->filePathFor($file), $dest, $file['mode']);
+                continue;
+            }
             $this->mkdir(\dirname($dest));
-            $source = $this->filePath($hash, 0 !== ($mode & 0100));
-            $ok = \in_array($relative, $copy, true) ? copy($source, $dest) && chmod($dest, $mode) : ($this->linker)($source, $dest);
-            if (!$ok) {
+            if (!($this->linker)($this->filePathFor($file), $dest)) {
                 throw new \RuntimeException("Cannot materialise $dest from the store");
             }
         }
@@ -194,17 +191,13 @@ final class Store
     {
         $entry = $this->entry($key);
         $byDir = [];
-        foreach ($entry['files'] as $relative => ['hash' => $hash, 'mode' => $mode]) {
+        foreach ($entry['files'] as $relative => $file) {
             $dest = $target.'/'.$relative;
-            $source = $this->filePath($hash, 0 !== ($mode & 0100));
             if (\in_array($relative, $copy, true)) {
-                $this->mkdir(\dirname($dest));
-                if (!copy($source, $dest) || !chmod($dest, $mode)) {
-                    throw new \RuntimeException("Cannot materialise $dest from the store");
-                }
+                $this->copyPrivate($this->filePathFor($file), $dest, $file['mode']);
                 continue;
             }
-            $byDir[\dirname($dest)][$dest] = [$source, $mode];
+            $byDir[\dirname($dest)][$dest] = [$this->filePathFor($file), $file['mode']];
         }
         foreach ($byDir as $dir => $files) {
             $this->mkdir($dir);
@@ -281,8 +274,8 @@ final class Store
                 $stale[] = $index;
                 continue;
             }
-            foreach ($this->entryAt($index)['files'] as ['hash' => $hash, 'mode' => $mode]) {
-                $referenced[$this->filePath($hash, 0 !== ($mode & 0100))] = true;
+            foreach ($this->entryAt($index)['files'] as $file) {
+                $referenced[$this->filePathFor($file)] = true;
             }
         }
         // ponytail: an mtime grace period, not a lock; an ingest longer than an hour is still exposed. Upgrade: flock on the store.
@@ -338,6 +331,21 @@ final class Store
     private function filePath(string $hash, bool $executable): string
     {
         return $this->root.'/files/'.substr($hash, 0, 2).'/'.$hash.($executable ? '-x' : '');
+    }
+
+    /** @param array{hash: string, mode: int} $entry an index file entry */
+    private function filePathFor(array $entry): string
+    {
+        return $this->filePath($entry['hash'], 0 !== ($entry['mode'] & 0100));
+    }
+
+    /** Private copy with normal permissions (declared bins, and every file of the copy strategy). */
+    private function copyPrivate(string $source, string $dest, int $mode): void
+    {
+        $this->mkdir(\dirname($dest));
+        if (!copy($source, $dest) || !chmod($dest, $mode)) {
+            throw new \RuntimeException("Cannot materialise $dest from the store");
+        }
     }
 
     /** `vendor/rest` => index/<vendor>/<rest>.json; version and reference come from package metadata, so only safe characters survive. */

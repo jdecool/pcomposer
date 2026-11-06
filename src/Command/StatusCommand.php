@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace JDecool\Composer\Plugin\PComposer\Command;
 
 use Composer\Command\BaseCommand;
-use JDecool\Composer\Plugin\PComposer\Manifest;
 use JDecool\Composer\Plugin\PComposer\Plugin;
 use Symfony\Component\Console\Helper\Table;
 use Symfony\Component\Console\Input\InputInterface;
@@ -21,11 +20,9 @@ final class StatusCommand extends BaseCommand
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
         $composer = $this->requireComposer();
-        $vendorDir = $composer->getConfig()->get('vendor-dir');
-        \assert(\is_string($vendorDir));
         $store = Plugin::store($composer);
 
-        $entries = Manifest::inVendorDir($vendorDir)->read();
+        $entries = Plugin::manifest($composer)->read();
         if ([] === $entries) {
             $output->writeln('No package linked from the store (no vendor/composer/pcomposer.json).');
         } else {
