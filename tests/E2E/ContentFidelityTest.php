@@ -61,4 +61,29 @@ final class ContentFidelityTest extends E2ETestCase
         self::assertDirectoryDoesNotExist($this->tmp.'/store', 'nothing should have been ingested');
         self::assertSame('{}', trim((string) file_get_contents($project.'/vendor/composer/pcomposer.json')));
     }
+
+    public function testComposerStatusReportsOnlyRealModifications(): void
+    {
+        // Global plugin from a zip: the `path`-symlinked plugin would itself show up as modified in a dirty checkout.
+        $this->addPluginPackage('1.0.0');
+        $this->installPluginGlobally('1.0.0');
+        $this->addPackage('acme/tool', '1.0.0', [
+            'src/Foo.php' => '<?php class Foo {}',
+            'bin/run' => "#!/bin/sh\necho hi\n",
+        ], ['bin/run'], ['bin' => ['bin/run']], ['src/Alias.php' => 'Foo.php'], ['var/cache']);
+        $project = $this->createBareProject(['acme/tool' => '1.0.0']);
+        [$exitCode, $output] = $this->composer($project, ['install']);
+        self::assertSame(0, $exitCode, $output);
+
+        [$exitCode, $output] = $this->composer($project, ['status']);
+        self::assertSame(0, $exitCode, $output);
+        self::assertStringContainsString('No local changes', $output);
+
+        file_put_contents($project.'/vendor/acme/tool/bin/run', "#!/bin/sh\necho edited\n");
+        [$exitCode, $output] = $this->composer($project, ['status']);
+        self::assertSame(1, $exitCode, $output);
+        self::assertStringContainsString('acme/tool', $output);
+        self::assertFileExists($project.'/vendor/acme/tool/src/Foo.php');
+        self::assertDirectoryDoesNotExist($project.'/vendor/acme/tool_compare');
+    }
 }
