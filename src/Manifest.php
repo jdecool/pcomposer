@@ -46,8 +46,10 @@ final class Manifest
             return [];
         }
 
-        /* @var array<string, array{name: string, version: string, reference: string, strategy: string}> */
-        return json_decode($json, true, 512, \JSON_THROW_ON_ERROR);
+        /** @var array<string, array{name: string, version: string, reference: string, strategy: string}> $entries */
+        $entries = json_decode($json, true, 512, \JSON_THROW_ON_ERROR);
+
+        return $entries;
     }
 
     /** Merges this run's records over the file and drops packages no longer installed at the recorded version. */
