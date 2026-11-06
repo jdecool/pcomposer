@@ -84,7 +84,7 @@ class StoreZipDownloader extends ZipDownloader
                 }
                 $key = self::storeKey($package);
                 $this->store->ingest($key, self::packageRoot($temporaryDir));
-                $this->store->link($key, $path);
+                $this->store->link($key, $path, $package->getBinaries());
                 // `composer status` installs into `<path>_compare` to diff: only the real install path counts.
                 if ($this->filesystem->normalizePath($path) === $this->filesystem->normalizePath((string) $this->installationManager->getInstallPath($package))) {
                     $this->manifest->record($package, 'hardlink');

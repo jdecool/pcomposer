@@ -56,14 +56,18 @@ final class Store
 
     /**
      * Hard-links every file of the $key entry into $target (created if missing).
+     *
+     * @param list<string> $copy relative paths materialised as private copies with normal permissions (declared bins)
      */
-    public function link(string $key, string $target): void
+    public function link(string $key, string $target, array $copy = []): void
     {
         foreach ($this->entry($key) as $relative => ['hash' => $hash, 'mode' => $mode]) {
             $dest = $target.'/'.$relative;
             $this->mkdir(\dirname($dest));
-            if (!link($this->filePath($hash, 0 !== ($mode & 0100)), $dest)) {
-                throw new \RuntimeException("Cannot hard-link $dest from the store");
+            $source = $this->filePath($hash, 0 !== ($mode & 0100));
+            $ok = \in_array($relative, $copy, true) ? copy($source, $dest) && chmod($dest, $mode) : link($source, $dest);
+            if (!$ok) {
+                throw new \RuntimeException("Cannot materialise $dest from the store");
             }
         }
     }
