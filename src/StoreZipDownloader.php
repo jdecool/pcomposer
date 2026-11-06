@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace JDecool\Composer\Plugin\PComposer;
 
 use Composer\Cache;
-use Composer\Config;
+use Composer\Config as ComposerConfig;
 use Composer\DependencyResolver\Operation\InstallOperation;
 use Composer\Downloader\ZipDownloader;
 use Composer\EventDispatcher\EventDispatcher;
@@ -21,16 +21,18 @@ use Symfony\Component\Finder\Finder;
 
 /**
  * Composer's zip downloader with the install step replaced: the archive is
- * extracted next to the target, ingested into the store, then hard-linked into place.
+ * extracted next to the target, ingested into the store, then materialised into place
+ * with the strategy Config picks for the package.
  */
 class StoreZipDownloader extends ZipDownloader
 {
     public function __construct(
+        private readonly Config $pcomposerConfig,
         private readonly Store $store,
         private readonly Manifest $manifest,
         private readonly InstallationManager $installationManager,
         IOInterface $io,
-        Config $config,
+        ComposerConfig $config,
         HttpDownloader $httpDownloader,
         ?EventDispatcher $eventDispatcher = null,
         ?Cache $cache = null,
@@ -84,10 +86,10 @@ class StoreZipDownloader extends ZipDownloader
                 }
                 $key = self::storeKey($package);
                 $this->store->ingest($key, self::packageRoot($temporaryDir));
-                $this->store->link($key, $path, $package->getBinaries());
+                $strategy = $this->store->materialise($key, $path, $this->pcomposerConfig->strategyFor($package->getName()), $package->getBinaries());
                 // `composer status` installs into `<path>_compare` to diff: only the real install path counts.
                 if ($this->filesystem->normalizePath($path) === $this->filesystem->normalizePath((string) $this->installationManager->getInstallPath($package))) {
-                    $this->manifest->record($package, 'hardlink');
+                    $this->manifest->record($package, $strategy);
                 }
                 $this->filesystem->removeDirectory($temporaryDir);
                 $this->removeCleanupPath($package, $temporaryDir);

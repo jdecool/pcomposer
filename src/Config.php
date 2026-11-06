@@ -26,6 +26,12 @@ final class Config
         }
     }
 
+    /** Packages listed in `copy` are always copied; the others use the configured strategy. */
+    public function strategyFor(string $packageName): string
+    {
+        return \in_array($packageName, $this->copy, true) ? 'copy' : $this->strategy;
+    }
+
     public static function fromComposer(Composer $composer): self
     {
         $extra = $composer->getPackage()->getExtra();

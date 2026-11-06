@@ -55,6 +55,26 @@ final class Store
     }
 
     /**
+     * Materialises the $key entry into $target with the given strategy (see Config::STRATEGIES).
+     *
+     * @param list<string> $copy relative paths materialised as private copies when hard-linking (declared bins)
+     *
+     * @return string the strategy actually used
+     */
+    public function materialise(string $key, string $target, string $strategy, array $copy = []): string
+    {
+        // ponytail: reflink is ticket 06; until then it behaves as copy and is recorded as such.
+        if ('copy' === $strategy || 'reflink' === $strategy) {
+            $this->copy($key, $target);
+
+            return 'copy';
+        }
+        $this->link($key, $target, $copy);
+
+        return 'hardlink';
+    }
+
+    /**
      * Hard-links every file of the $key entry into $target (created if missing).
      *
      * @param list<string> $copy relative paths materialised as private copies with normal permissions (declared bins)
@@ -98,6 +118,20 @@ final class Store
         sort($paths);
 
         return $paths;
+    }
+
+    /**
+     * Copies every file of the $key entry into $target (created if missing) with normal permissions (0644 / 0755).
+     */
+    public function copy(string $key, string $target): void
+    {
+        foreach ($this->entry($key) as $relative => ['hash' => $hash, 'mode' => $mode]) {
+            $dest = $target.'/'.$relative;
+            $this->mkdir(\dirname($dest));
+            if (!copy($this->filePath($hash, 0 !== ($mode & 0100)), $dest) || !chmod($dest, $mode)) {
+                throw new \RuntimeException("Cannot copy $dest from the store");
+            }
+        }
     }
 
     /** @return array<string, array{hash: string, mode: int}> */

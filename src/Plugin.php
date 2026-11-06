@@ -35,7 +35,8 @@ class Plugin implements PluginInterface, EventSubscriberInterface, Capable
 
     public function activate(Composer $composer, IOInterface $io): void
     {
-        if (Platform::isWindows() || !Config::fromComposer($composer)->enabled) {
+        $pcomposerConfig = Config::fromComposer($composer);
+        if (Platform::isWindows() || !$pcomposerConfig->enabled) {
             return;
         }
 
@@ -56,6 +57,7 @@ class Plugin implements PluginInterface, EventSubscriberInterface, Capable
         $process = $composer->getLoop()->getProcessExecutor();
 
         $composer->getDownloadManager()->setDownloader('zip', new StoreZipDownloader(
+            $pcomposerConfig,
             $store,
             $this->manifest,
             $composer->getInstallationManager(),
