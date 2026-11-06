@@ -97,7 +97,7 @@ final class Store
         $paths = glob($this->root.'/files/*/*') ?: [];
         sort($paths);
 
-        return array_values($paths);
+        return $paths;
     }
 
     /** @return array<string, array{hash: string, mode: int}> */
