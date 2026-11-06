@@ -38,9 +38,16 @@ final class Config
         $settings = \is_array($extra['pcomposer'] ?? null) ? $extra['pcomposer'] : [];
         $strategy = Platform::getEnv('PCOMPOSER_STRATEGY') ?: ($settings['strategy'] ?? 'hardlink');
 
+        // Patched packages (cweagans/composer-patches) are copied so that patching never touches the store.
+        $copy = array_merge(
+            \is_array($settings['copy'] ?? null) ? array_values($settings['copy']) : [],
+            \is_array($extra['patches'] ?? null) ? array_keys($extra['patches']) : [],
+        );
+
         return new self(
             !Platform::getEnv('PCOMPOSER_DISABLE') && false !== ($settings['enabled'] ?? true),
             \is_string($strategy) ? $strategy : json_encode($strategy, \JSON_THROW_ON_ERROR),
+            array_values(array_filter($copy, \is_string(...))),
         );
     }
 }

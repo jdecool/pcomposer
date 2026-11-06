@@ -75,6 +75,35 @@ final class ConfigurationTest extends E2ETestCase
         self::assertSame('copy', $this->manifest($project)['acme/lib']['strategy']);
     }
 
+    public function testPackagesListedInExtraPcomposerCopyAreCopiedWhileOthersAreLinked(): void
+    {
+        $this->addPackage('acme/lib', '1.0.0', ['src/Foo.php' => '<?php class Foo {}']);
+        $this->addPackage('acme/writer', '1.0.0', ['src/W.php' => '<?php class W {}']);
+        $project = $this->createProject(['acme/lib' => '1.0.0', 'acme/writer' => '1.0.0'], ['extra' => ['pcomposer' => ['copy' => ['acme/writer']]]]);
+
+        [$exitCode, $output] = $this->composer($project, ['install']);
+
+        self::assertSame(0, $exitCode, $output);
+        self::assertContains(fileinode($project.'/vendor/acme/lib/src/Foo.php'), $this->storeInodes());
+        self::assertNotContains(fileinode($project.'/vendor/acme/writer/src/W.php'), $this->storeInodes());
+        self::assertSame(0644, fileperms($project.'/vendor/acme/writer/src/W.php') & 0777);
+        self::assertSame(['acme/lib' => 'hardlink', 'acme/writer' => 'copy'], array_map(static fn (array $e): string => $e['strategy'], $this->manifest($project)));
+    }
+
+    public function testPackagesWithPatchesInExtraPatchesAreCopied(): void
+    {
+        $this->addPackage('acme/lib', '1.0.0', ['src/Foo.php' => '<?php class Foo {}']);
+        $this->addPackage('acme/patched', '1.0.0', ['src/P.php' => '<?php class P {}']);
+        $project = $this->createProject(['acme/lib' => '1.0.0', 'acme/patched' => '1.0.0'], ['extra' => ['patches' => ['acme/patched' => ['fix' => 'patches/fix.patch']]]]);
+
+        [$exitCode, $output] = $this->composer($project, ['install']);
+
+        self::assertSame(0, $exitCode, $output);
+        self::assertContains(fileinode($project.'/vendor/acme/lib/src/Foo.php'), $this->storeInodes());
+        self::assertNotContains(fileinode($project.'/vendor/acme/patched/src/P.php'), $this->storeInodes());
+        self::assertSame(['acme/lib' => 'hardlink', 'acme/patched' => 'copy'], array_map(static fn (array $e): string => $e['strategy'], $this->manifest($project)));
+    }
+
     /** @return array<string, array{name: string, version: string, reference: string, strategy: string}> */
     private function manifest(string $project): array
     {
