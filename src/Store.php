@@ -38,6 +38,7 @@ final class Store
     /** Total size in bytes of the stored files (0 when the store does not exist yet). */
     public function size(): int
     {
+        // ponytail: full walk of files/ on every call; cache the total in a sidecar if `status` ever feels slow on a big store.
         if (!is_dir($this->root.'/files')) {
             return 0;
         }
@@ -132,7 +133,11 @@ final class Store
         return $this->fallbackReason;
     }
 
-    /** Tries the entry's first file against a probe path in $target: no upfront filesystem detection, the first link or clone tells. */
+    /**
+     * Tries the entry's first file against a probe path in $target: no upfront filesystem detection, the first link or clone tells.
+     * ponytail: for reflink the probe is one `cp` process, then reflink() runs another per directory (two for the first one);
+     * fold the probe into the first batch if process spawns ever show up in profiles.
+     */
     private function canMaterialiseInto(string $key, string $target, string $strategy): bool
     {
         $files = $this->entry($key)['files'];
@@ -367,7 +372,9 @@ final class Store
 
     /**
      * One `cp` process cloning every source into $dir (copy-on-write: `cp -c` on macOS, `cp --reflink=always` elsewhere).
-     * Throws with cp's stderr when the filesystem refuses; macOS silently copies on non-APFS volumes.
+     * Throws with cp's stderr when the filesystem refuses.
+     * ponytail: macOS `cp -c` silently falls back to a plain copy on non-APFS volumes, so the manifest says reflink
+     * for what are copies; detect it by comparing inode block counts (`stat`) after the probe if that ever matters.
      *
      * @param list<string> $sources
      */

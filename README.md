@@ -216,6 +216,7 @@ If the second one fixes it, the problem is in pcomposer; please open an issue wi
   `composer pcomposer:verify` tells you whether a store file was altered.
 - **`reflink` needs APFS, btrfs or XFS** (with reflink enabled), and the store on the same filesystem as the project. On Linux, `cp --reflink=always` refuses on other filesystems and the plugin falls back to `copy` with a warning. On macOS, `cp -c` **silently copies** on non-APFS volumes: no warning, and the manifest still says `reflink` although the files are plain copies.
 - **`prune` and concurrent installs.** `pcomposer:prune` deletes store files referenced by no index entry. Files written in the last hour are spared, which covers an install running at the same time on the same store; an ingest that takes longer than that is still exposed, so prefer running prune when nothing else uses the store (parallel CI jobs sharing one cache included).
+- **A run with the plugin disabled leaves the manifest stale.** `PCOMPOSER_DISABLE=1` or `enabled: false` installs through Composer without touching `vendor/composer/pcomposer.json`, so its entries may describe packages that are now plain copies until the next enabled run rewrites it.
 - **Every install still goes through Composer's download step** (served from its zip cache when possible); only the extraction is skipped for packages already in the store.
 
 ## Contributing
