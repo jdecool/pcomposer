@@ -94,8 +94,15 @@ final class Store
         return $files;
     }
 
+    /** Whether $key was ingested before (its index entry exists). */
+    public function has(string $key): bool
+    {
+        return file_exists($this->indexPath($key));
+    }
+
     /**
      * Materialises the $key entry into $target with the given strategy (see Config::STRATEGIES).
+     * Refreshes the entry's mtime first: prune() treats it as the time of last use.
      *
      * @param string[] $copy relative paths always materialised as private copies (declared bins)
      *
@@ -103,6 +110,7 @@ final class Store
      */
     public function materialise(string $key, string $target, string $strategy, array $copy = []): string
     {
+        touch($this->indexPath($key));
         if ('hardlink' === $strategy && $this->canMaterialiseInto($key, $target, $strategy)) {
             $this->link($key, $target, $copy);
 

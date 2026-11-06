@@ -51,18 +51,29 @@ class StoreZipDownloader extends ZipDownloader
             return parent::install($package, $path, $output);
         }
 
+        $key = self::storeKey($package);
+        $cached = $this->store->has($key);
         if ($output) {
-            $this->io->writeError('  - '.InstallOperation::format($package).': Linking from store');
+            $this->io->writeError('  - '.InstallOperation::format($package).': Linking from store'.($cached ? ' (cached)' : ''));
         }
 
         $this->filesystem->emptyDirectory($path);
+        $fileName = $this->getFileName($package, $path);
+        if ($cached) {
+            if (file_exists($fileName)) {
+                $this->filesystem->unlink($fileName);
+            }
+            $this->materialise($package, $key, $path);
+
+            return \React\Promise\resolve(null);
+        }
+
         do {
             $temporaryDir = \dirname($path).'/.pcomposer-'.bin2hex(random_bytes(4));
         } while (is_dir($temporaryDir));
         $this->addCleanupPath($package, $temporaryDir);
         $this->addCleanupPath($package, $path);
         $this->filesystem->ensureDirectoryExists($temporaryDir);
-        $fileName = $this->getFileName($package, $path);
 
         $cleanup = function () use ($package, $path, $temporaryDir): void {
             $this->clearLastCacheWrite($package);
@@ -79,23 +90,13 @@ class StoreZipDownloader extends ZipDownloader
             throw $e;
         }
 
-        return $promise->then(function () use ($package, $path, $temporaryDir, $fileName, $cleanup): void {
+        return $promise->then(function () use ($package, $key, $path, $temporaryDir, $fileName, $cleanup): void {
             try {
                 if (file_exists($fileName)) {
                     $this->filesystem->unlink($fileName);
                 }
-                $key = self::storeKey($package);
                 $this->store->ingest($key, self::packageRoot($temporaryDir));
-                $wanted = $this->pcomposerConfig->strategyFor($package->getName());
-                $strategy = $this->store->materialise($key, $path, $wanted, $package->getBinaries());
-                if (!$this->fallbackWarned && null !== ($reason = $this->store->fallbackReason())) {
-                    $this->fallbackWarned = true;
-                    $this->io->writeError("<warning>pcomposer: $wanted failed ($reason), falling back to copy for this run</warning>");
-                }
-                // `composer status` installs into `<path>_compare` to diff: only the real install path counts.
-                if ($this->filesystem->normalizePath($path) === $this->filesystem->normalizePath((string) $this->installationManager->getInstallPath($package))) {
-                    $this->manifest->record($package, $strategy);
-                }
+                $this->materialise($package, $key, $path);
                 $this->filesystem->removeDirectory($temporaryDir);
                 $this->removeCleanupPath($package, $temporaryDir);
                 $this->removeCleanupPath($package, $path);
@@ -104,6 +105,21 @@ class StoreZipDownloader extends ZipDownloader
                 throw $e;
             }
         });
+    }
+
+    /** Materialises the stored $key into $path with the configured strategy and records the result in the manifest. */
+    private function materialise(PackageInterface $package, string $key, string $path): void
+    {
+        $wanted = $this->pcomposerConfig->strategyFor($package->getName());
+        $strategy = $this->store->materialise($key, $path, $wanted, $package->getBinaries());
+        if (!$this->fallbackWarned && null !== ($reason = $this->store->fallbackReason())) {
+            $this->fallbackWarned = true;
+            $this->io->writeError("<warning>pcomposer: $wanted failed ($reason), falling back to copy for this run</warning>");
+        }
+        // `composer status` installs into `<path>_compare` to diff: only the real install path counts.
+        if ($this->filesystem->normalizePath($path) === $this->filesystem->normalizePath((string) $this->installationManager->getInstallPath($package))) {
+            $this->manifest->record($package, $strategy);
+        }
     }
 
     /** `vendor/name@version-reference`; artifact packages have no reference, their zip shasum stands in. */

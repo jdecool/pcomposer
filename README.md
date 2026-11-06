@@ -32,7 +32,7 @@ The plugin declares `extra.plugin-modifies-downloads`, so on the very first `com
 
 ## How it works
 
-The plugin replaces Composer's downloader for the `zip` dist type. Downloading, Composer's own zip cache, checksum verification, `prepare` and `cleanup` are inherited unchanged; only the install step differs. For each package it:
+The plugin replaces Composer's downloader for the `zip` dist type. Downloading, Composer's own zip cache, checksum verification, `prepare` and `cleanup` are inherited unchanged; only the install step differs. For each package whose `<name>@<version>-<reference>` is not in the store yet it:
 
 1. extracts the archive to a temporary directory next to the target (`vendor/<vendor>/.pcomposer-<random>`);
 2. ingests every regular file into the store, skipping content that is already there;
@@ -40,7 +40,7 @@ The plugin replaces Composer's downloader for the `zip` dist type. Downloading, 
 4. materialises the package into `vendor/<vendor>/<name>` with the active strategy;
 5. removes the temporary directory.
 
-The install log shows `- Installing acme/lib (1.0.0): Linking from store` for such packages.
+A package already in the store skips the extraction and goes straight to step 4. The install log shows `- Installing acme/lib (1.0.0): Linking from store` for the first case and `Linking from store (cached)` for the second.
 
 ### Store
 
@@ -52,7 +52,7 @@ files/<hh>/<sha256>-x     executable file, mode 0555
 index/<vendor>/<name>@<version>-<reference>.json
 ```
 
-Files are keyed by SHA-256 plus the executable bit, so identical content shared between packages, versions or projects exists once. Each index entry lists the package's files with hash and mode, its empty directories and its symlinks (symlinks are recreated, never linked). Writes are atomic (temporary file, then rename) and an existing file is never rewritten, so several Composer processes may write to the same store at once. An index entry is rewritten, hence its mtime refreshed, every time an install uses it; `pcomposer:prune` relies on that.
+Files are keyed by SHA-256 plus the executable bit, so identical content shared between packages, versions or projects exists once. Each index entry lists the package's files with hash and mode, its empty directories and its symlinks (symlinks are recreated, never linked). Writes are atomic (temporary file, then hard-linked into place) and an existing file is never rewritten, so several Composer processes may write to the same store at once. An index entry's mtime is refreshed every time an install uses it; `pcomposer:prune` relies on that.
 
 ### Manifest
 
@@ -216,7 +216,7 @@ If the second one fixes it, the problem is in pcomposer; please open an issue wi
   `composer pcomposer:verify` tells you whether a store file was altered.
 - **`reflink` needs APFS, btrfs or XFS** (with reflink enabled), and the store on the same filesystem as the project. On Linux, `cp --reflink=always` refuses on other filesystems and the plugin falls back to `copy` with a warning. On macOS, `cp -c` **silently copies** on non-APFS volumes: no warning, and the manifest still says `reflink` although the files are plain copies.
 - **`prune` and concurrent installs.** `pcomposer:prune` deletes store files referenced by no index entry. An install running at the same time on the same store may have ingested files whose index entry is not yet written; prune would delete them and that install would fail. Run prune when nothing else uses the store (parallel CI jobs sharing one cache included).
-- **Every install still downloads and extracts the archive.** The store removes duplicate files on disk and shares them between projects and versions; it does not bypass Composer's download or extraction.
+- **Every install still goes through Composer's download step** (served from its zip cache when possible); only the extraction is skipped for packages already in the store.
 
 ## Contributing
 

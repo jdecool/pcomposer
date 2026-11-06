@@ -40,6 +40,27 @@ final class HardlinkInstallTest extends E2ETestCase
         self::assertSame(fileinode($a.'/vendor/acme/lib/src/Foo.php'), fileinode($b.'/vendor/acme/lib/src/Foo.php'));
     }
 
+    public function testASecondProjectLinksFromTheWarmStoreWithoutExtractingAgain(): void
+    {
+        $this->addPackage('acme/lib', '1.0.0', ['src/Foo.php' => '<?php class Foo {}']);
+        $a = $this->createProject(['acme/lib' => '1.0.0'], [], 'a');
+        $b = $this->createProject(['acme/lib' => '1.0.0'], [], 'b');
+        [$exitCode, $output] = $this->composer($a, ['install']);
+        self::assertSame(0, $exitCode, $output);
+        self::assertStringContainsString('Installing acme/lib (1.0.0): Linking from store', $output);
+        self::assertStringNotContainsString('(cached)', $output);
+        $index = (array) glob($this->tmp.'/store/index/acme/lib@*.json');
+        self::assertCount(1, $index);
+        $indexInode = fileinode((string) $index[0]);
+
+        [$exitCode, $output] = $this->composer($b, ['install']);
+
+        self::assertSame(0, $exitCode, $output);
+        self::assertStringContainsString('Installing acme/lib (1.0.0): Linking from store (cached)', $output);
+        self::assertSame($indexInode, fileinode((string) $index[0]), 'index entry was rewritten: the package was ingested again');
+        self::assertSame(fileinode($a.'/vendor/acme/lib/src/Foo.php'), fileinode($b.'/vendor/acme/lib/src/Foo.php'));
+    }
+
     public function testTwoVersionsOfAPackageShareUnchangedFiles(): void
     {
         $this->addPackage('acme/lib', '1.0.0', ['src/Foo.php' => '<?php class Foo {}', 'src/Bar.php' => '<?php class Bar {}']);
