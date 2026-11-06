@@ -86,9 +86,16 @@ final class Store
         return $this->root.'/files/'.substr($hash, 0, 2).'/'.$hash.($executable ? '-x' : '');
     }
 
+    /** `vendor/rest` => index/<vendor>/<rest>.json; version and reference come from package metadata, so only safe characters survive. */
     private function indexPath(string $key): string
     {
-        return $this->root.'/index/'.$key.'.json';
+        if (str_contains($key, '..')) {
+            throw new \InvalidArgumentException("Invalid store key $key");
+        }
+        [$vendor, $rest] = explode('/', $key, 2) + [1 => ''];
+        $safe = static fn (string $s): string => (string) preg_replace('/[^A-Za-z0-9_.@-]/', '_', $s);
+
+        return $this->root.'/index/'.$safe($vendor).'/'.$safe($rest).'.json';
     }
 
     /** Atomic temp + rename; an existing entry is left untouched. */
