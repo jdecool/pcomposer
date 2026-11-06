@@ -57,6 +57,7 @@ final class StoreMaintenanceTest extends E2ETestCase
         $index = $this->indexFile('acme/lib');
         $filesBefore = \count($this->storeInodes());
         touch($index, time() - 40 * 86400);
+        $this->ageStoreFiles();
 
         [$exitCode, $output] = $this->composer($project, ['pcomposer:prune', '--dry-run']);
         self::assertSame(0, $exitCode, $output);
@@ -88,6 +89,7 @@ final class StoreMaintenanceTest extends E2ETestCase
         [$exitCode, $output] = $this->composer($project, ['install']);
         self::assertSame(0, $exitCode, $output);
         touch($this->indexFile('acme/old'), time() - 2 * 3600);
+        $this->ageStoreFiles();
 
         [$exitCode, $output] = $this->composer($project, ['pcomposer:prune', '--older-than=1y']);
         self::assertNotSame(0, $exitCode, 'unknown duration unit must be rejected');
@@ -99,6 +101,14 @@ final class StoreMaintenanceTest extends E2ETestCase
         self::assertFileExists($this->storeFile('shared'));
         self::assertFileExists($this->storeFile('new'));
         self::assertFileDoesNotExist($this->storeFile('old'));
+    }
+
+    /** Backdates every store file past prune's grace period, as in a store that was not written to recently. */
+    private function ageStoreFiles(): void
+    {
+        foreach ((array) glob($this->tmp.'/store/files/*/*') as $file) {
+            touch((string) $file, time() - 2 * 3600);
+        }
     }
 
     private function storeFile(string $content): string

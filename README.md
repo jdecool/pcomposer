@@ -172,7 +172,7 @@ Rehashes every file of the store (the expected hash is the file name) and prints
 
 ### `composer pcomposer:prune [--older-than=30d] [--dry-run]`
 
-Deletes index entries not used within the window, then every store file no remaining entry references. The window is `<N>d`, `<N>h` or `<N>m` (default `30d`); an invalid window prints `Invalid --older-than "..."` and exits 1.
+Deletes index entries not used within the window, then every store file no remaining entry references, except files written in the last hour (an install running at the same time may be ingesting them, its index entry not written yet). The window is `<N>d`, `<N>h` or `<N>m` (default `30d`); an invalid window prints `Invalid --older-than "..."` and exits 1.
 
 Prints `Removed <n> index entries and <m> store files` (the paths with `-v`). With `--dry-run` nothing is deleted, every path is printed and the summary reads `Would remove ...`. Exit code 0.
 
@@ -215,7 +215,7 @@ If the second one fixes it, the problem is in pcomposer; please open an issue wi
 
   `composer pcomposer:verify` tells you whether a store file was altered.
 - **`reflink` needs APFS, btrfs or XFS** (with reflink enabled), and the store on the same filesystem as the project. On Linux, `cp --reflink=always` refuses on other filesystems and the plugin falls back to `copy` with a warning. On macOS, `cp -c` **silently copies** on non-APFS volumes: no warning, and the manifest still says `reflink` although the files are plain copies.
-- **`prune` and concurrent installs.** `pcomposer:prune` deletes store files referenced by no index entry. An install running at the same time on the same store may have ingested files whose index entry is not yet written; prune would delete them and that install would fail. Run prune when nothing else uses the store (parallel CI jobs sharing one cache included).
+- **`prune` and concurrent installs.** `pcomposer:prune` deletes store files referenced by no index entry. Files written in the last hour are spared, which covers an install running at the same time on the same store; an ingest that takes longer than that is still exposed, so prefer running prune when nothing else uses the store (parallel CI jobs sharing one cache included).
 - **Every install still goes through Composer's download step** (served from its zip cache when possible); only the extraction is skipped for packages already in the store.
 
 ## Contributing

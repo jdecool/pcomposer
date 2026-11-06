@@ -258,8 +258,12 @@ final class Store
         return ['checked' => $checked, 'corrupted' => $corrupted];
     }
 
+    /** Orphan files younger than this are kept: an install may be ingesting them, its index entry not written yet. */
+    public const PRUNE_GRACE_PERIOD = 3600;
+
     /**
-     * Deletes index entries last used before $olderThan (unix time), then every store file no remaining entry references.
+     * Deletes index entries last used before $olderThan (unix time), then every store file no remaining entry references
+     * and older than PRUNE_GRACE_PERIOD.
      *
      * @return array{entries: list<string>, files: list<string>} what was (or, with $dryRun, would be) deleted
      */
@@ -276,7 +280,9 @@ final class Store
                 $referenced[$this->filePath($hash, 0 !== ($mode & 0100))] = true;
             }
         }
-        $orphans = array_values(array_filter($this->storeFiles(), static fn (string $path): bool => !isset($referenced[$path])));
+        // ponytail: an mtime grace period, not a lock; an ingest longer than an hour is still exposed. Upgrade: flock on the store.
+        $young = time() - self::PRUNE_GRACE_PERIOD;
+        $orphans = array_values(array_filter($this->storeFiles(), static fn (string $path): bool => !isset($referenced[$path]) && filemtime($path) < $young));
         if (!$dryRun) {
             foreach ([...$stale, ...$orphans] as $path) {
                 if (!unlink($path)) {

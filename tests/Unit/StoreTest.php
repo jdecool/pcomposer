@@ -148,6 +148,22 @@ final class StoreTest extends TestCase
         self::assertSame(['b.txt', 'run.sh', 'same.txt'], array_values(array_diff((array) scandir($this->tmp.'/out/sub'), ['.', '..'])), 'no hash-named leftovers');
     }
 
+    public function testPruneSparesOrphansYoungerThanTheGracePeriod(): void
+    {
+        file_put_contents($this->tmp.'/pkg/a.txt', 'fresh');
+        file_put_contents($this->tmp.'/pkg/b.txt', 'old');
+        $store = new Store($this->tmp.'/store');
+        $store->ingest('acme/lib@1.0.0.0-ref', $this->tmp.'/pkg');
+        unlink($this->tmp.'/store/index/acme/lib@1.0.0.0-ref.json');
+        $old = $this->tmp.'/store/files/'.substr(hash('sha256', 'old'), 0, 2).'/'.hash('sha256', 'old');
+        touch($old, time() - 2 * 3600);
+
+        self::assertSame(['entries' => [], 'files' => [$old]], $store->prune(time()));
+
+        self::assertFileExists($this->tmp.'/store/files/'.substr(hash('sha256', 'fresh'), 0, 2).'/'.hash('sha256', 'fresh'), 'an orphan being ingested right now must survive');
+        self::assertFileDoesNotExist($old);
+    }
+
     public function testIndexEntryListsFilesEmptyDirectoriesAndSymlinks(): void
     {
         file_put_contents($this->tmp.'/pkg/a.txt', 'content');
