@@ -54,6 +54,32 @@ abstract class E2ETestCase extends TestCase
     }
 
     /**
+     * Zips this repository's plugin (composer.json + src/) into the fixture's artifact repository.
+     * Artifact packages take their version from the zipped composer.json, so it is injected there.
+     *
+     * @return string path of the zip
+     */
+    protected function addPluginPackage(string $version): string
+    {
+        $root = \dirname(__DIR__, 2);
+        /** @var array<string, mixed> $json */
+        $json = json_decode((string) file_get_contents($root.'/composer.json'), true, 512, \JSON_THROW_ON_ERROR);
+        $zipPath = $this->tmp.'/artifacts/jdecool-pcomposer-'.$version.'.zip';
+        $zip = new \ZipArchive();
+        $zip->open($zipPath, \ZipArchive::CREATE);
+        $zip->addFromString('composer.json', self::json(['version' => $version] + $json));
+        $it = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($root.'/src', \FilesystemIterator::SKIP_DOTS));
+        foreach ($it as $file) {
+            /** @var \SplFileInfo $file */
+            $path = $file->getPathname();
+            $zip->addFile($path, substr($path, \strlen($root) + 1));
+        }
+        $zip->close();
+
+        return $zipPath;
+    }
+
+    /**
      * Builds a package served by the fixture's `path` repository (installed by Composer's path downloader).
      *
      * @param array<string, string> $files relative path => content
@@ -74,7 +100,7 @@ abstract class E2ETestCase extends TestCase
     }
 
     /**
-     * Creates a fixture project requiring the plugin (from this repository) and the given packages.
+     * Creates a fixture project requiring the plugin (from this repository, via a `path` repository) and the given packages.
      *
      * @param array<string, string> $require name => constraint
      * @param array<string, mixed>  $extra   extra root composer.json fields, merged over the defaults
@@ -84,23 +110,64 @@ abstract class E2ETestCase extends TestCase
      */
     protected function createProject(array $require = [], array $extra = [], string $name = 'project'): string
     {
+        /** @var array<string, mixed> $extra */
+        $extra = array_replace_recursive([
+            'repositories' => [
+                ['type' => 'path', 'url' => \dirname(__DIR__, 2), 'options' => ['versions' => ['jdecool/pcomposer' => '1.0.0']]],
+            ],
+            'config' => ['allow-plugins' => ['jdecool/pcomposer' => true]],
+        ], $extra);
+
+        return $this->createBareProject(['jdecool/pcomposer' => '*'] + $require, $extra, $name);
+    }
+
+    /**
+     * Creates a fixture project that does not mention the plugin: it only sees the artifact and `path` fixture repositories.
+     *
+     * @param array<string, string> $require name => constraint
+     * @param array<string, mixed>  $extra   extra root composer.json fields, merged over the defaults (`repositories` are prepended)
+     * @param string                $name    directory name, to create several projects in one test
+     *
+     * @return string fixture project dir
+     */
+    protected function createBareProject(array $require = [], array $extra = [], string $name = 'project'): string
+    {
         $dir = $this->tmp.'/'.$name;
         mkdir($dir);
+        /** @var list<array<string, mixed>> $repositories */
+        $repositories = $extra['repositories'] ?? [];
+        unset($extra['repositories']);
         /** @var array<string, mixed> $json */
         $json = array_replace_recursive([
             'name' => 'fixture/project',
-            'require' => ['jdecool/pcomposer' => '*'] + $require,
+            'require' => $require,
             'repositories' => [
-                ['type' => 'path', 'url' => \dirname(__DIR__, 2), 'options' => ['versions' => ['jdecool/pcomposer' => '1.0.0']]],
+                ...$repositories,
                 ['type' => 'artifact', 'url' => $this->tmp.'/artifacts'],
                 ['type' => 'path', 'url' => $this->tmp.'/paths/*'],
                 ['packagist.org' => false],
             ],
-            'config' => ['allow-plugins' => ['jdecool/pcomposer' => true]],
         ], $extra);
         file_put_contents($dir.'/composer.json', self::json($json));
 
         return $dir;
+    }
+
+    /**
+     * Installs the plugin from the artifact repository into the isolated COMPOSER_HOME (`composer global require`).
+     * The global composer.json is written first: allow-plugins is checked against it, and prompts are off.
+     */
+    protected function installPluginGlobally(string $version): void
+    {
+        $home = $this->tmp.'/home';
+        mkdir($home, 0777, true);
+        file_put_contents($home.'/composer.json', self::json([
+            'repositories' => [['type' => 'artifact', 'url' => $this->tmp.'/artifacts'], ['packagist.org' => false]],
+            'config' => ['allow-plugins' => ['jdecool/pcomposer' => true]],
+        ]));
+
+        [$exitCode, $output] = $this->composer($this->tmp, ['global', 'require', 'jdecool/pcomposer:'.$version]);
+        self::assertSame(0, $exitCode, $output);
     }
 
     /**
@@ -132,6 +199,21 @@ abstract class E2ETestCase extends TestCase
         self::assertIsResource($process);
 
         return [proc_close($process), (string) file_get_contents($log)];
+    }
+
+    /** @return list<int> inodes of every regular file under the store */
+    protected function storeInodes(): array
+    {
+        $inodes = [];
+        $it = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($this->tmp.'/store', \FilesystemIterator::SKIP_DOTS));
+        foreach ($it as $file) {
+            /** @var \SplFileInfo $file */
+            if ($file->isFile()) {
+                $inodes[] = $file->getInode();
+            }
+        }
+
+        return $inodes;
     }
 
     private static function composerBinary(): string

@@ -86,19 +86,4 @@ final class HardlinkInstallTest extends E2ETestCase
         self::assertNotContains(fileinode($local.'/src/Local.php'), $this->storeInodes());
         self::assertContains(fileinode($project.'/vendor/acme/lib/src/Foo.php'), $this->storeInodes());
     }
-
-    /** @return list<int> inodes of every regular file under the store */
-    private function storeInodes(): array
-    {
-        $inodes = [];
-        $it = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($this->tmp.'/store', \FilesystemIterator::SKIP_DOTS));
-        foreach ($it as $file) {
-            /** @var \SplFileInfo $file */
-            if ($file->isFile()) {
-                $inodes[] = $file->getInode();
-            }
-        }
-
-        return $inodes;
-    }
 }
