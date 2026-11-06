@@ -65,7 +65,8 @@ abstract class E2ETestCase extends TestCase
     {
         $dir = $this->tmp.'/project';
         mkdir($dir);
-        file_put_contents($dir.'/composer.json', self::json(array_replace_recursive([
+        /** @var array<string, mixed> $json */
+        $json = array_replace_recursive([
             'name' => 'fixture/project',
             'require' => ['jdecool/pcomposer' => '*'] + $require,
             'repositories' => [
@@ -74,7 +75,8 @@ abstract class E2ETestCase extends TestCase
                 ['packagist.org' => false],
             ],
             'config' => ['allow-plugins' => ['jdecool/pcomposer' => true]],
-        ], $extra)));
+        ], $extra);
+        file_put_contents($dir.'/composer.json', self::json($json));
 
         return $dir;
     }
@@ -82,7 +84,8 @@ abstract class E2ETestCase extends TestCase
     /**
      * Runs `composer <args>` in the project with an isolated home, cache dir and store.
      *
-     * @param array<string, string> $env extra environment variables
+     * @param list<string>          $args
+     * @param array<string, string> $env  extra environment variables
      *
      * @return array{0: int, 1: string} exit code and combined stdout+stderr
      */
@@ -95,18 +98,18 @@ abstract class E2ETestCase extends TestCase
             'COMPOSER_ALLOW_SUPERUSER' => '1',
             'COMPOSER_NO_INTERACTION' => '1',
         ];
+        $log = $this->tmp.'/composer.log';
+        file_put_contents($log, '');
         $process = proc_open(
             [self::composerBinary(), ...$args],
-            [1 => ['pipe', 'w'], 2 => ['redirect', 1]],
+            [1 => ['file', $log, 'a'], 2 => ['file', $log, 'a']],
             $pipes,
             $projectDir,
             $env + getenv(),
         );
         self::assertIsResource($process);
-        $output = (string) stream_get_contents($pipes[1]);
-        fclose($pipes[1]);
 
-        return [proc_close($process), $output];
+        return [proc_close($process), (string) file_get_contents($log)];
     }
 
     private static function composerBinary(): string
